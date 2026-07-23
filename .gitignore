@@ -1,0 +1,16 @@
+# Brainstorm visual sessions and local screenshots
+.superpowers/
+docs/superpowers/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+
+# Frontend dependencies and build output
+gui/node_modules/
+gui/dist/
+gui/src-tauri/target/
+gui/src-tauri/gen/
+
+# Local test output
+artifacts/scenario-test/

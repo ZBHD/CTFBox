@@ -1,0 +1,244 @@
+openapi: 3.0.1
+info:
+  title: sqlmapapi OpenAPI/Swagger 规范
+  version: '0.1'
+paths:
+  /version:
+    get:
+      description: 获取服务器版本
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "1.5.7.7#dev"
+                  success:
+                    type: boolean
+                    example: true
+  /task/new:
+    get:
+      description: 创建新任务
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskid:
+                    type: string
+                    example: "fad44d6beef72285"
+                  success:
+                    type: boolean
+                    example: true
+  /scan/{taskid}/start:
+    post:
+      description: 启动扫描
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+            examples:
+              '0':
+                value: '{"url":"http://testphp.vulnweb.com/artists.php?artist=1"}'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  engineid:
+                    type: integer
+                    example: 19720
+                  success:
+                    type: boolean
+                    example: true
+  /scan/{taskid}/stop:
+    get:
+      description: 停止扫描
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+  /scan/{taskid}/status:
+    get:
+      description: 获取扫描状态
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: terminated
+                  returncode:
+                    type: integer
+                    example: 0
+                  success:
+                    type: boolean
+                    example: true
+  /scan/{taskid}/list:
+    get:
+      description: 列出给定任务 ID 的选项
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  options:
+                    type: array
+                    items:
+                      type: object
+  /scan/{taskid}/data:
+    get:
+      description: 检索扫描结果数据
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  success:
+                    type: boolean
+                    example: true
+                  error:
+                    type: array
+                    items:
+                      type: object
+  /scan/{taskid}/log:
+    get:
+      description: 检索日志消息
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  log:
+                    type: array
+                    items:
+                      type: object
+                  success:
+                    type: boolean
+                    example: true
+  /scan/{taskid}/kill:
+    get:
+      description: 终止扫描
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+  /task/{taskid}/delete:
+    get:
+      description: 删除现有任务
+      parameters:
+        - in: path
+          name: taskid
+          required: true
+          schema:
+            type: string
+          description: 扫描任务ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+

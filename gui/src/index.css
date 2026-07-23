@@ -1,0 +1,156 @@
+:root {
+  color: #dbe4ec;
+  background: #080c11;
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+
+body {
+  margin: 0;
+  min-width: 900px;
+  min-height: 600px;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  background: #0c1117;
+}
+
+.tool-rail {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #202a34;
+  background: #090e14;
+}
+
+.brand {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 17px;
+  border-bottom: 1px solid #202a34;
+}
+
+.brand-mark {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #07140e;
+  background: #43d39f;
+}
+
+.tool-rail nav {
+  padding: 16px 9px;
+}
+
+.nav-label {
+  display: block;
+  padding: 0 8px 8px;
+  color: #687684;
+  font-size: 10px;
+}
+
+.nav-item,
+.settings-link {
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: 5px;
+  color: #8e9aa7;
+  background: transparent;
+  text-align: left;
+}
+
+.nav-item {
+  padding: 0 10px;
+}
+
+.nav-item-active {
+  color: #78ddb6;
+  background: #14251e;
+  box-shadow: inset 2px 0 #3bc890;
+}
+
+.settings-link {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-top: 1px solid #202a34;
+  border-radius: 0;
+}
+
+.main-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  border-bottom: 1px solid #202a34;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.topbar p {
+  margin: 4px 0 0;
+  color: #6f7e8c;
+  font-size: 11px;
+}
+
+.health {
+  padding: 5px 8px;
+  border: 1px solid #34414d;
+  border-radius: 4px;
+  color: #8996a2;
+  font-size: 10px;
+}
+
+.health-ok {
+  border-color: #2b7459;
+  color: #76dcb5;
+  background: #13251e;
+}
+
+.empty-state {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  color: #7a8895;
+}
+
+.empty-state h2 {
+  margin: 14px 0 5px;
+  color: #c6d0d9;
+  font-size: 15px;
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: 11px;
+}

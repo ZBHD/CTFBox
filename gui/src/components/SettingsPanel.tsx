@@ -5,6 +5,7 @@ export interface FlagSettings {
   prefixes: string;
   scanOutput: boolean;
   scanStructured: boolean;
+  scanBase64: boolean;
   caseSensitive: boolean;
   pauseOnMatch: boolean;
 }
@@ -38,6 +39,7 @@ export function SettingsPanel({ value, onChange }: SettingsPanelProps) {
           </div>
           <div className="settings-row"><div><strong>检测终端回显</strong><span>扫描每次运行产生的文本输出</span></div><Toggle checked={value.scanOutput} onChange={(next) => update("scanOutput", next)} /></div>
           <div className="settings-row"><div><strong>检测结构化字段</strong><span>扫描数据库、列名和解码结果</span></div><Toggle checked={value.scanStructured} onChange={(next) => update("scanStructured", next)} /></div>
+          <div className="settings-row"><div><strong>检测 Base64 编码</strong><span>解码疑似 Base64 文本后匹配 Flag 检测头</span></div><Toggle checked={value.scanBase64} onChange={(next) => update("scanBase64", next)} /></div>
           <div className="settings-row"><div><strong>区分大小写</strong><span>严格匹配检测头的大小写</span></div><Toggle checked={value.caseSensitive} onChange={(next) => update("caseSensitive", next)} /></div>
           <div className="settings-row"><div><strong>命中后暂停流程</strong><span>识别到 Flag 后停止自动执行下一步</span></div><Toggle checked={value.pauseOnMatch} onChange={(next) => update("pauseOnMatch", next)} /></div>
         </section>

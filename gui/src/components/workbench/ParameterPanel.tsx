@@ -1,101 +1,193 @@
-import { FileUp, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronDown, FileUp, Search, SlidersHorizontal } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
+import { getToolSchema, type ParameterField, type ParameterOption } from "../../lib/toolSchemas";
+import type { StructuredFinding } from "../../state/taskStore";
 
 interface ParameterPanelProps {
   toolId: string;
   mode?: string;
   parameters: ToolParameters;
+  findings?: StructuredFinding[];
   onChange: (name: string, value: string | boolean) => void;
 }
 
-const MODE_NAMES: Record<string, string> = {
-  encoding: "编码转换",
-  hash: "哈希识别",
-  xor: "异或分析",
-  "fake-encryption": "伪加密",
-  lsb: "LSB 隐写",
-  image: "图片隐写",
-  audio: "音频隐写",
-};
-
-function Field({ label, name, value, placeholder, onChange }: {
-  label: string;
-  name: string;
+function ChoiceField({
+  value,
+  options,
+  placeholder = "未指定",
+  onChange,
+}: {
   value: string;
-  placeholder: string;
-  onChange: ParameterPanelProps["onChange"];
+  options: readonly ParameterOption[];
+  placeholder?: string;
+  onChange: (value: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
   return (
-    <label className="field">
-      <span>{label}</span>
-      <input value={value} placeholder={placeholder} onChange={(event) => onChange(name, event.target.value)} />
-    </label>
+    <div className={`choice-field ${open ? "choice-field-open" : ""}`}>
+      <button type="button" className="choice-trigger" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className={selected ? "" : "choice-placeholder"}>{(selected?.label ?? value) || placeholder}</span>
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="choice-menu" role="listbox">
+          <button type="button" className={!value ? "choice-option active" : "choice-option"} onClick={() => { onChange(""); setOpen(false); }}>
+            <span>{placeholder}</span>{!value && <Check size={12} />}
+          </button>
+          {options.map((option) => (
+            <button type="button" className={value === option.value ? "choice-option active" : "choice-option"} key={option.value} onClick={() => { onChange(option.value); setOpen(false); }}>
+              <span>{option.label}</span>{value === option.value && <Check size={12} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function Check({ label, name, checked, onChange }: {
-  label: string;
-  name: string;
-  checked: boolean;
-  onChange: ParameterPanelProps["onChange"];
-}) {
+function BooleanField({ field, checked, onChange }: { field: ParameterField; checked: boolean; onChange: ParameterPanelProps["onChange"] }) {
   return (
-    <label className="check-row">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(name, event.target.checked)} />
+    <label className="parameter-toggle-row">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(field.id, event.target.checked)} />
       <span className="check-box" />
-      <span>{label}</span>
+      <span className="parameter-label"><strong>{field.label}</strong><code>{field.flag}</code></span>
     </label>
   );
 }
 
-export function ParameterPanel({ toolId, mode, parameters, onChange }: ParameterPanelProps) {
+function ParameterControl({
+  field,
+  value,
+  findings,
+  onChange,
+}: {
+  field: ParameterField;
+  value: string | boolean | number | undefined;
+  findings: StructuredFinding[];
+  onChange: ParameterPanelProps["onChange"];
+}) {
+  if (field.control === "boolean") {
+    return <BooleanField field={field} checked={Boolean(value)} onChange={onChange} />;
+  }
+
+  if (field.control === "multiselect") {
+    const selected = String(value ?? "");
+    return (
+      <div className="parameter-field parameter-field-wide">
+        <div className="parameter-field-label"><strong>{field.label}</strong><code>{field.flag}</code></div>
+        <div className="chip-options">
+          {field.options?.map((option) => {
+            const active = selected.includes(option.value);
+            return <button type="button" className={active ? "chip-option active" : "chip-option"} key={option.value} onClick={() => onChange(field.id, active ? selected.replace(option.value, "") : `${selected}${option.value}`)}>{option.value}<span>{option.label}</span></button>;
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const resultValues = field.resultKind
+    ? findings.filter((finding) => finding.kind === field.resultKind).map((finding) => finding.value)
+    : [];
+  const resultOptions = Array.from(new Set(resultValues)).map((item) => ({ value: item, label: item }));
+  const commonLabel = <div className="parameter-field-label"><strong>{field.label}</strong><code>{field.flag}</code></div>;
+
+  if (field.control === "select" || (field.control === "result-select" && resultOptions.length > 0)) {
+    return (
+      <div className="parameter-field">
+        {commonLabel}
+        <ChoiceField
+          value={String(value ?? "")}
+          options={field.control === "select" ? field.options ?? [] : resultOptions}
+          placeholder={field.placeholder}
+          onChange={(next) => onChange(field.id, next)}
+        />
+      </div>
+    );
+  }
+
+  if (field.control === "textarea") {
+    return (
+      <label className="parameter-field parameter-field-wide">
+        {commonLabel}
+        <textarea value={String(value ?? "")} placeholder={field.placeholder} rows={3} onChange={(event) => onChange(field.id, event.target.value)} />
+      </label>
+    );
+  }
+
+  return (
+    <label className="parameter-field">
+      {commonLabel}
+      <div className={field.control === "file" ? "file-field" : undefined}>
+        <input
+          type={field.control === "number" ? "number" : "text"}
+          value={String(value ?? "")}
+          min={field.min}
+          max={field.max}
+          placeholder={field.placeholder}
+          onChange={(event) => onChange(field.id, event.target.value)}
+        />
+        {field.control === "file" && <button type="button" title="选择文件"><FileUp size={14} /></button>}
+      </div>
+    </label>
+  );
+}
+
+export function ParameterPanel({ toolId, parameters, findings = [], onChange }: ParameterPanelProps) {
+  const schema = getToolSchema(toolId);
+  const [activeGroup, setActiveGroup] = useState("quick");
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleFields = useMemo(() => {
+    if (normalizedQuery) {
+      return schema.fields.filter((field) => `${field.label} ${field.flag} ${field.description ?? ""}`.toLowerCase().includes(normalizedQuery));
+    }
+    if (activeGroup === "quick") return schema.fields.filter((field) => field.quick);
+    return schema.fields.filter((field) => field.group === activeGroup);
+  }, [activeGroup, normalizedQuery, schema]);
+
+  const discovered = (kind: "database" | "table" | "column") =>
+    new Set(findings.filter((item) => item.kind === kind).map((item) => item.value)).size;
+
   return (
     <section className="parameter-panel">
-      <header className="panel-header">
+      <header className="panel-header parameter-panel-header">
         <div className="panel-title"><SlidersHorizontal size={15} /><h2>任务参数</h2></div>
+        <span className="parameter-total">{schema.fields.length} 项</span>
       </header>
+
+      <div className="parameter-search">
+        <Search size={13} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索参数或命令标志" />
+      </div>
+
+      {toolId === "sqlmap" && (
+        <div className="result-link-strip">
+          {(["database", "table", "column"] as const).map((kind) => {
+            const labels = { database: "数据库", table: "数据表", column: "字段列" };
+            const count = discovered(kind);
+            return <button type="button" key={kind} onClick={() => setActiveGroup("enumeration")}><span>{labels[kind]}</span><strong>{count ? `${count} 个已发现` : "等待枚举"}</strong></button>;
+          })}
+        </div>
+      )}
+
+      <nav className="parameter-groups" aria-label="参数分组">
+        <button type="button" className={activeGroup === "quick" && !normalizedQuery ? "active" : ""} onClick={() => { setActiveGroup("quick"); setQuery(""); }}>常用</button>
+        {schema.groups.map((group) => <button type="button" className={activeGroup === group.id && !normalizedQuery ? "active" : ""} key={group.id} onClick={() => { setActiveGroup(group.id); setQuery(""); }}>{group.label}</button>)}
+      </nav>
+
       <div className="parameter-content">
-        {toolId === "sqlmap" && (
-          <>
-            <Field label="目标 URL" name="url" value={String(parameters.url ?? "")} placeholder="http://127.0.0.1/item?id=1" onChange={onChange} />
-            <div className="control-group">
-              <span className="control-label">枚举范围</span>
-              <Check label="数据库" name="database" checked={Boolean(parameters.database)} onChange={onChange} />
-              <Check label="数据表" name="tables" checked={Boolean(parameters.tables)} onChange={onChange} />
-              <Check label="字段列" name="columns" checked={Boolean(parameters.columns)} onChange={onChange} />
-            </div>
-            <div className="control-group">
-              <span className="control-label">运行选项</span>
-              <Check label="自动确认 (--batch)" name="batch" checked={Boolean(parameters.batch)} onChange={onChange} />
-            </div>
-          </>
-        )}
-        {toolId === "sstimap" && (
-          <>
-            <Field label="目标 URL" name="url" value={String(parameters.url ?? "")} placeholder="http://127.0.0.1/page?name=test" onChange={onChange} />
-            <Field label="请求数据" name="payload" value={String(parameters.payload ?? "")} placeholder="name={{7*7}}" onChange={onChange} />
-          </>
-        )}
-        {(toolId === "crypto" || toolId === "misc") && (
-          <>
-            <div className="selected-module">
-              <span>当前模块</span>
-              <strong>{MODE_NAMES[mode ?? ""] ?? "请选择工具"}</strong>
-            </div>
-            <label className="field">
-              <span>{toolId === "crypto" && mode === "encoding" ? "输入文本" : "输入文件"}</span>
-              <div className="file-field">
-                <input value={String(parameters.input ?? "")} placeholder={toolId === "crypto" && mode === "encoding" ? "粘贴待处理文本" : "选择或输入文件路径"} onChange={(event) => onChange("input", event.target.value)} />
-                <button type="button" title="选择文件"><FileUp size={15} /></button>
-              </div>
-            </label>
-            <div className="control-group">
-              <span className="control-label">处理方式</span>
-              <Check label="自动识别" name="auto" checked={parameters.auto !== false} onChange={onChange} />
-              <Check label="保留中间结果" name="intermediate" checked={Boolean(parameters.intermediate)} onChange={onChange} />
-            </div>
-          </>
-        )}
+        <div className="parameter-section-heading">
+          <div>
+            <strong>{normalizedQuery ? "搜索结果" : activeGroup === "quick" ? "常用参数" : schema.groups.find((group) => group.id === activeGroup)?.label}</strong>
+            <span>{normalizedQuery ? `找到 ${visibleFields.length} 项` : activeGroup === "quick" ? "优先展示高频任务参数" : schema.groups.find((group) => group.id === activeGroup)?.description}</span>
+          </div>
+        </div>
+        <div className="parameter-fields">
+          {visibleFields.map((field) => <ParameterControl key={field.id} field={field} value={parameters[field.id]} findings={findings} onChange={onChange} />)}
+          {visibleFields.length === 0 && <div className="parameter-no-results">没有匹配的参数</div>}
+        </div>
       </div>
     </section>
   );

@@ -1,10 +1,12 @@
 import { ChevronDown, ChevronRight, TerminalSquare } from "lucide-react";
+import type { FlagHit } from "../../lib/flagDetector";
 import type { CommandRun } from "../../state/taskStore";
 
 interface CommandTerminalProps {
   runs: CommandRun[];
   commandPreview: string;
   onToggleRun?: (runId: string) => void;
+  flagHits?: FlagHit[];
 }
 
 const STATUS_LABEL: Record<CommandRun["status"], string> = {
@@ -15,10 +17,23 @@ const STATUS_LABEL: Record<CommandRun["status"], string> = {
   failed: "失败",
 };
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightOutput(output: string, hits: FlagHit[]) {
+  const tokens = Array.from(new Set(hits.map((hit) => hit.encoded ?? hit.text))).filter(Boolean);
+  if (tokens.length === 0) return output;
+  const tokenSet = new Set(tokens);
+  const pattern = new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "g");
+  return output.split(pattern).map((part, index) => tokenSet.has(part) ? <mark key={`${part}-${index}`}>{part}</mark> : part);
+}
+
 export function CommandTerminal({
   runs,
   commandPreview,
   onToggleRun,
+  flagHits = [],
 }: CommandTerminalProps) {
   return (
     <section className="terminal-panel" aria-label="命令终端">
@@ -51,7 +66,7 @@ export function CommandTerminal({
                   {STATUS_LABEL[run.status]}
                 </span>
               </button>
-              {!run.collapsed && <pre>{run.output || "等待回显..."}</pre>}
+              {!run.collapsed && <pre>{run.output ? highlightOutput(run.output, flagHits) : "等待回显..."}</pre>}
               {run.collapsed && <span className="terminal-output-cache">{run.output}</span>}
             </article>
           ))

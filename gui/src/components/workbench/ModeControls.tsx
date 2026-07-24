@@ -7,6 +7,7 @@ interface ModeControlsProps {
   edition: PluginEdition;
   running: boolean;
   canRun: boolean;
+  executionControls?: boolean;
   onEditionChange: (edition: PluginEdition) => void;
   onRun: () => void;
   onClear: () => void;
@@ -18,6 +19,7 @@ export function ModeControls({
   edition,
   running,
   canRun,
+  executionControls = true,
   onEditionChange,
   onRun,
   onClear,
@@ -29,7 +31,7 @@ export function ModeControls({
         <div><h1>{plugin.name}</h1>{modeLabel && <span>{modeLabel}</span>}</div>
         <p>{plugin.description}</p>
       </div>
-      <div className="workspace-actions">
+      {executionControls && <div className="workspace-actions">
         {plugin.editions && (
           <div className="edition-switch" aria-label="版本选择">
             <button className={edition === "original" ? "active" : ""} type="button" onClick={() => onEditionChange("original")}>原版</button>
@@ -43,7 +45,7 @@ export function ModeControls({
           {running ? <Square size={15} /> : <Play size={15} />}
           {running ? "停止" : "运行"}
         </button>
-      </div>
+      </div>}
     </header>
   );
 }

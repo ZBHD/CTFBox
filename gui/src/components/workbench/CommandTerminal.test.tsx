@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { CommandRun } from "../../state/taskStore";
+import type { FlagHit } from "../../lib/flagDetector";
 import { CommandTerminal } from "./CommandTerminal";
 
 const runs: CommandRun[] = [
@@ -30,5 +31,21 @@ describe("CommandTerminal", () => {
     expect(html).toContain("fetching tables");
     expect(html).toContain("run-1");
     expect(html).toContain("run-2");
+  });
+
+  it("highlights plain flags and their Base64 source token in terminal output", () => {
+    const hits: FlagHit[] = [
+      { text: "flag{plain}", source: "plain" },
+      { text: "flag{encoded}", source: "base64", encoded: "ZmxhZ3tlbmNvZGVkfQ==" },
+    ];
+    const html = renderToStaticMarkup(
+      <CommandTerminal
+        runs={[{ ...runs[0], collapsed: false, output: "flag{plain} ZmxhZ3tlbmNvZGVkfQ==" }]}
+        commandPreview="sqlmap.py"
+        flagHits={hits}
+      />,
+    );
+
+    expect(html.match(/<mark>/g)?.length).toBe(2);
   });
 });

@@ -1,4 +1,5 @@
 import { ListTree } from "lucide-react";
+import type { FlagHit } from "../../lib/flagDetector";
 import type { StructuredFinding, TaskSuggestion } from "../../state/taskStore";
 
 interface ResultsPanelProps {
@@ -6,6 +7,7 @@ interface ResultsPanelProps {
   suggestions: TaskSuggestion[];
   flagEnabled: boolean;
   flagPrefixes: string[];
+  flagHits?: FlagHit[];
 }
 
 function highlightFlag(value: string, enabled: boolean, prefixes: string[]) {
@@ -17,7 +19,7 @@ function highlightFlag(value: string, enabled: boolean, prefixes: string[]) {
   );
 }
 
-export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes }: ResultsPanelProps) {
+export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes, flagHits = [] }: ResultsPanelProps) {
   return (
     <section className="results-panel">
       <header className="panel-header">
@@ -25,7 +27,10 @@ export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes 
         <span className="result-count">{findings.length}</span>
       </header>
       <div className="results-content">
-        {findings.length === 0 ? (
+        {flagHits.length > 0 && <div className="flag-findings">
+          {flagHits.map((hit, index) => <div className="flag-finding" key={`${hit.source}-${hit.text}-${index}`}><mark>{hit.text}</mark>{hit.source === "base64" && <span>Base64</span>}</div>)}
+        </div>}
+        {findings.length === 0 && flagHits.length === 0 ? (
           <div className="results-empty"><span>暂无结果</span><small>运行后将从回显中提取可用字段</small></div>
         ) : findings.map((finding, index) => (
           <div className="finding-row" key={`${finding.kind}-${index}`}>

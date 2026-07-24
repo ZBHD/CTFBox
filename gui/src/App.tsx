@@ -12,6 +12,7 @@ import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import { buildCommand, type ToolParameters } from "./lib/commandBuilder";
 import { detectFlags } from "./lib/flagDetector";
 import { getPlugin } from "./lib/pluginRegistry";
+import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
 import { appendRun, clearTask, createTask, type TaskState } from "./state/taskStore";
 
 interface HealthStatus {
@@ -50,6 +51,7 @@ function App() {
   const [selection, setSelection] = useState<ToolSelection>({ toolId: "sqlmap" });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [flagSettings, setFlagSettings] = useState(DEFAULT_FLAG_SETTINGS);
+  const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [tasks, setTasks] = useState<Record<string, TaskState>>({
     "sqlmap:default": createTask("sqlmap"),
   });
@@ -59,6 +61,11 @@ function App() {
       .then(setHealth)
       .catch(() => setHealthError(true));
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    saveTheme(theme);
+  }, [theme]);
 
   const key = selectionKey(selection);
   const task = tasks[key] ?? createTask(selection.toolId);
@@ -123,7 +130,7 @@ function App() {
     <div className="app-shell">
       <ToolRail selection={selection} settingsOpen={settingsOpen} onSelect={selectTool} onOpenSettings={() => setSettingsOpen(true)} />
       {settingsOpen ? (
-        <SettingsPanel value={flagSettings} onChange={setFlagSettings} />
+        <SettingsPanel value={flagSettings} theme={theme} onChange={setFlagSettings} onThemeChange={setTheme} />
       ) : (
         <main className="main-content">
           <ModeControls
@@ -144,7 +151,7 @@ function App() {
             </div>
             <ParameterPanel toolId={selection.toolId} parameters={task.parameters as ToolParameters} findings={task.findings} onChange={updateParameter} />
           </div> : selection.toolId === "crypto" ?
-            <CryptoWorkbench mode={selection.mode ?? "encoding"} parameters={task.parameters as ToolParameters} onChange={updateParameter} onClear={() => updateCurrentTask(clearTask)} /> :
+            <CryptoWorkbench mode={selection.mode ?? "encoding"} parameters={task.parameters as ToolParameters} flagPrefixes={prefixes} flagCaseSensitive={flagSettings.caseSensitive} flagEnabled={flagSettings.enabled} onChange={updateParameter} onClear={() => updateCurrentTask(clearTask)} /> :
             <MiscWorkbench mode={selection.mode ?? "image"} parameters={task.parameters as ToolParameters} onChange={updateParameter} onClear={() => updateCurrentTask(clearTask)} />}
           {!isWebTool && <FlagHitStrip hits={flagHits} />}
           <footer className="statusbar">

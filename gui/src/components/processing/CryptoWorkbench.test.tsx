@@ -13,4 +13,14 @@ describe("CryptoWorkbench", () => {
     expect(html).toContain("Base64");
     expect(html).not.toContain("命令终端");
   });
+
+  it("shows automatic decoded candidates and the expanded codec set", () => {
+    const html = renderToStaticMarkup(
+      <CryptoWorkbench mode="encoding" parameters={{ input: "MZXW6===" }} flagPrefixes={["flag", "CTF"]} onChange={() => undefined} onClear={() => undefined} />,
+    );
+
+    expect(html).toContain("Base32");
+    expect(html).toContain("自动解码");
+    expect(html).toContain("foo");
+  });
 });

@@ -127,7 +127,7 @@ def _goInference(payload, expression, charsetType=None, firstChar=None, lastChar
         kb.inferenceMode = False
 
         if not kb.bruteMode:
-            debugMsg = '在 %.2f 秒内执行了 %d quer%s' % (count, 'y' if count == 1 else "ies", calculateDeltaSeconds(start))
+            debugMsg = '执行了 %d%s查询，用时 %.2f 秒' % (count, " 次", calculateDeltaSeconds(start))
             logger.debug(debugMsg)
 
     return value

@@ -460,7 +460,7 @@ def unionUse(expression, unpack=True, dump=False):
     duration = calculateDeltaSeconds(start)
 
     if not kb.bruteMode:
-        debugMsg = '在 %.2f 秒内执行了 %d quer%s' % (kb.counters[PAYLOAD.TECHNIQUE.UNION], 'y' if kb.counters[PAYLOAD.TECHNIQUE.UNION] == 1 else "ies", duration)
+        debugMsg = '执行了 %d%s查询，用时 %.2f 秒' % (kb.counters[PAYLOAD.TECHNIQUE.UNION], " 次", duration)
         logger.debug(debugMsg)
 
     return value

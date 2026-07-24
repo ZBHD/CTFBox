@@ -34,6 +34,28 @@ jobs:
         shell: pwsh
         run: pnpm --dir gui install --frozen-lockfile
 
+      - name: 验证发布版本
+        id: release_version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(?<version>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))$') {
+            throw "发布标签必须是稳定版 SemVer（例如 v1.2.3）：$tag"
+          }
+          $version = $Matches.version
+          $tauriVersion = (Get-Content -LiteralPath "gui/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
+          $packageVersion = (Get-Content -LiteralPath "gui/package.json" -Raw | ConvertFrom-Json).version
+          $cargoMetadata = cargo metadata --locked --no-deps --format-version 1 --manifest-path "gui/src-tauri/Cargo.toml" | ConvertFrom-Json
+          $cargoPackages = @($cargoMetadata.packages | Where-Object { $_.name -eq "ctfbox" })
+          if ($cargoPackages.Count -ne 1) {
+            throw "无法唯一确定 ctfbox Rust 包版本"
+          }
+          $cargoVersion = $cargoPackages[0].version
+          if ($tauriVersion -ne $version -or $cargoVersion -ne $version -or $packageVersion -ne $version) {
+            throw "版本不一致：tag=$version, tauri=$tauriVersion, cargo=$cargoVersion, package=$packageVersion"
+          }
+          "version=$version" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+
       - name: 构建安装包
         shell: pwsh
         env:
@@ -44,6 +66,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
         run: |
           $asset = Get-Item "gui/src-tauri/target/release/bundle/nsis/*-setup.exe"
           $updater = Get-Item "gui/src-tauri/target/release/bundle/nsis/*.nsis.zip"
@@ -53,10 +76,14 @@ jobs:
           $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
           "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
           $tag = $env:GITHUB_REF_NAME
-          $version = $tag -replace '^v', ''
+          $version = $env:RELEASE_VERSION
+          if ($tag -ne "v$version" -or $version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "发布版本输出无效"
+          }
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $signature = (Get-Content -LiteralPath $signatureAsset.FullName -Raw).Trim()
-          $downloadUrl = "https://github.com/ZBHD/CTFBox/releases/download/$tag/$($updater.Name)"
+          $repositoryUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          $downloadUrl = "$repositoryUrl/releases/download/$tag/$($updater.Name)"
           $manifest = [ordered]@{
             version = $version
             notes = "CTFBox $tag"
@@ -69,4 +96,27 @@ jobs:
             }
           }
           $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "latest.json" -Encoding utf8
-          gh release create $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --title "CTFBox $tag" --generate-notes --latest
+          $releaseJson = Join-Path $env:RUNNER_TEMP "ctfbox-release.json"
+          $releaseError = Join-Path $env:RUNNER_TEMP "ctfbox-release-error.txt"
+          gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" > $releaseJson 2> $releaseError
+          $queryExitCode = $LASTEXITCODE
+          if ($queryExitCode -eq 0) {
+            $release = Get-Content -LiteralPath $releaseJson -Raw | ConvertFrom-Json
+            if (-not $release.draft) {
+              throw "该标签的 Release 已发布，停止覆盖：$tag"
+            }
+            if ($release.prerelease) {
+              throw "草稿 Release 被标记为预发布版本，停止发布：$tag"
+            }
+            gh release upload $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --clobber
+            if ($LASTEXITCODE -ne 0) { throw "覆盖草稿 Release 资产失败" }
+          } else {
+            $queryError = Get-Content -LiteralPath $releaseError -Raw
+            if ($queryError -notmatch 'HTTP 404') {
+              throw "查询 GitHub Release 失败，退出码：$queryExitCode"
+            }
+          gh release create $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" --generate-notes --verify-tag
+            if ($LASTEXITCODE -ne 0) { throw "创建草稿 Release 失败" }
+          }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest --title "CTFBox $tag"
+          if ($LASTEXITCODE -ne 0) { throw "发布 Release 失败，草稿已保留以便重试" }

@@ -56,6 +56,12 @@ jobs:
           }
           "version=$version" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
 
+      - name: 前端质量检查
+        shell: pwsh
+        run: |
+          pnpm --dir gui typecheck
+          pnpm --dir gui test:unit
+
       - name: 构建安装包
         shell: pwsh
         env:

@@ -40,30 +40,33 @@ class InstallerConfigTests(unittest.TestCase):
         ):
             self.assertIn(permission, capability["permissions"])
 
-        def workflow_step(name):
-            match = re.search(
-                rf"(?ms)^      - name: {re.escape(name)}\s*$.*?"
-                r"(?=^      - name: |\Z)",
-                workflow,
-            )
-            self.assertIsNotNone(match, f"workflow step not found: {name}")
-            return match.group(0)
-
-        build_step = workflow_step("构建安装包")
+        build_step_match = re.search(
+            r"(?ms)^      - name: 构建安装包\r?\n.*?"
+            r"(?=^      - name: |\Z)",
+            workflow,
+        )
+        self.assertIsNotNone(build_step_match, "build workflow step missing")
+        build_step = build_step_match.group(0)
         self.assertRegex(
             build_step,
             re.compile(
-                r"^[ \t]+env:[ \t]*\r?$.*?"
-                r"^[ \t]+TAURI_SIGNING_PRIVATE_KEY:[ \t]*"
-                r"\$\{\{[ \t]*secrets\.TAURI_SIGNING_PRIVATE_KEY[ \t]*\}\}"
-                r"[ \t]*\r?$",
-                re.MULTILINE | re.DOTALL,
+                r"^        env:\r?\n"
+                r"(?:^          [A-Za-z_][A-Za-z0-9_]*:[^\r\n]*\r?\n)*?"
+                r"^          TAURI_SIGNING_PRIVATE_KEY: "
+                r"\$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}\r?$",
+                re.MULTILINE,
             ),
         )
 
-        release_step = workflow_step("发布到 GitHub Release")
+        release_step_match = re.search(
+            r"(?ms)^      - name: 发布到 GitHub Release\r?\n.*?"
+            r"(?=^      - name: |\Z)",
+            workflow,
+        )
+        self.assertIsNotNone(release_step_match, "release workflow step missing")
+        release_step = release_step_match.group(0)
         release_command_match = re.search(
-            r"(?m)^\s*gh\s+release\s+create\b.*(?:`\s*\r?\n\s+.*)*$",
+            r"(?m)^          gh release create\b[^\r\n]*$",
             release_step,
         )
         self.assertIsNotNone(release_command_match, "gh release create command missing")
@@ -72,30 +75,27 @@ class InstallerConfigTests(unittest.TestCase):
             r"\s--[A-Za-z]", release_command, maxsplit=1
         )[0]
 
-        def assert_release_asset(path_pattern):
-            if re.search(path_pattern, release_asset_arguments, re.IGNORECASE):
-                return
-
-            assignment = re.search(
-                rf"(?im)^\s*(\$[A-Za-z_]\w*)\s*=\s*(?:(Get-Item)\s+)?"
-                rf"['\"][^'\"]*{path_pattern}[^'\"]*['\"]\s*$",
-                release_step,
-            )
-            self.assertIsNotNone(
-                assignment,
-                f"release asset is not assigned from path: {path_pattern}",
-            )
-            reference_suffix = (
-                r"\.FullName\b" if assignment.group(2) else r"(?![\w.])"
-            )
-            asset_reference = re.compile(
-                rf"{re.escape(assignment.group(1))}{reference_suffix}",
+        assignment_scope = release_step[: release_command_match.start()]
+        updater_archive_match = re.search(
+            r'(?m)^          (\$[A-Za-z_]\w*)\s*=\s*Get-Item\s+'
+            r'"[^"\r\n]*/\*\.nsis\.zip"\s*$',
+            assignment_scope,
+        )
+        self.assertIsNotNone(
+            updater_archive_match, "updater archive assignment missing"
+        )
+        self.assertRegex(
+            release_asset_arguments,
+            re.compile(
+                rf"(?<!\S){re.escape(updater_archive_match.group(1))}"
+                r"\.FullName(?=\s|$)",
                 re.IGNORECASE,
-            )
-            self.assertRegex(release_asset_arguments, asset_reference)
-
-        assert_release_asset(r"\*\.nsis\.zip")
-        assert_release_asset(r"latest\.json")
+            ),
+        )
+        self.assertRegex(
+            release_asset_arguments,
+            r'(?<!\S)"latest\.json"(?=\s|$)',
+        )
 
     def test_nsis_supports_custom_directory_and_creates_desktop_shortcut(self):
         config_path = ROOT / "gui" / "src-tauri" / "tauri.conf.json"

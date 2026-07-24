@@ -58,10 +58,12 @@ export interface InstallOptions {
 
 export class UpdateRelaunchError extends Error {
   readonly installed = true;
+  override readonly cause: unknown;
 
   constructor(cause: unknown) {
-    super("更新已安装，但应用重启失败", { cause });
+    super("更新已安装，但应用重启失败");
     this.name = "UpdateRelaunchError";
+    this.cause = cause;
   }
 }
 
@@ -69,6 +71,17 @@ const EMPTY_STATE: UpdateState = {
   phase: "idle",
   downloadedBytes: 0,
 };
+const FINISHED_GRACE_MS = 1000;
+
+type CheckOutcome =
+  | { kind: "completed"; update: UpdateHandle | null }
+  | { kind: "failed"; error: unknown }
+  | { kind: "aborted" };
+
+type DownloadOutcome =
+  | { kind: "downloaded" }
+  | { kind: "failed"; error: unknown }
+  | { kind: "notification-failed"; error: unknown };
 
 function notify(listener: StateListener | undefined, state: UpdateState) {
   listener?.({ ...state });
@@ -79,6 +92,43 @@ async function closeDiscardedUpdate(update: UpdateHandle): Promise<void> {
     await update.close();
   } catch {
     // Preserve the cancellation or listener error that caused the discard.
+  }
+}
+
+function createAbortWait(signal: AbortSignal | undefined) {
+  let abortListener: (() => void) | undefined;
+  const promise = new Promise<CheckOutcome>((resolve) => {
+    if (!signal) return;
+    abortListener = () => { resolve({ kind: "aborted" }); };
+    if (signal.aborted) abortListener();
+    else signal.addEventListener("abort", abortListener, { once: true });
+  });
+
+  return {
+    promise,
+    dispose: () => {
+      if (abortListener) signal?.removeEventListener("abort", abortListener);
+    },
+  };
+}
+
+async function waitForFinished(
+  finished: Promise<void>,
+  notificationFailure: Promise<DownloadOutcome>,
+): Promise<DownloadOutcome | { kind: "finished" } | { kind: "timed-out" }> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ kind: "timed-out" }>((resolve) => {
+    timeoutId = setTimeout(() => { resolve({ kind: "timed-out" }); }, FINISHED_GRACE_MS);
+  });
+
+  try {
+    return await Promise.race([
+      finished.then(() => ({ kind: "finished" }) as const),
+      notificationFailure,
+      timeout,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 }
 
@@ -114,28 +164,47 @@ export async function checkLatest(
     if (options.signal?.aborted) return { state: { ...EMPTY_STATE } };
   }
 
-  let update: UpdateHandle | null;
+  const abortWait = createAbortWait(options.signal);
+  const checkOutcome = Promise.resolve()
+    .then(() => check())
+    .then<CheckOutcome, CheckOutcome>(
+      async (update) => {
+        if (options.signal?.aborted) {
+          if (update) await closeDiscardedUpdate(update);
+          return { kind: "aborted" };
+        }
+        return { kind: "completed", update };
+      },
+      (error) => options.signal?.aborted
+        ? { kind: "aborted" }
+        : { kind: "failed", error },
+    );
+
+  let outcome: CheckOutcome;
   try {
-    update = await check();
-  } catch (error) {
-    if (options.signal?.aborted || options.silent) {
-      return { state: { ...EMPTY_STATE } };
-    }
+    outcome = await Promise.race([checkOutcome, abortWait.promise]);
+  } finally {
+    abortWait.dispose();
+  }
+
+  if (outcome.kind === "aborted") {
+    return { state: { ...EMPTY_STATE } };
+  }
+
+  if (outcome.kind === "failed") {
+    if (options.silent) return { state: { ...EMPTY_STATE } };
 
     const state: UpdateState = {
       ...EMPTY_STATE,
       phase: "error",
-      error: formatUpdateError(error),
+      error: formatUpdateError(outcome.error),
     };
     if (options.signal?.aborted) return { state: { ...EMPTY_STATE } };
     notify(options.onState, state);
     return { state };
   }
 
-  if (options.signal?.aborted) {
-    if (update) await closeDiscardedUpdate(update);
-    return { state: { ...EMPTY_STATE } };
-  }
+  const { update } = outcome;
 
   if (!update) {
     const state = { ...EMPTY_STATE, phase: "latest" } satisfies UpdateState;
@@ -181,13 +250,14 @@ export async function downloadUpdate(
   notify(onState, state);
 
   let acceptingEvents = true;
-  let notificationFailed = false;
-  let notificationError: unknown;
+  let finishedReceived = false;
   let resolveFinished!: () => void;
-  let rejectFinished!: (error: unknown) => void;
-  const finished = new Promise<void>((resolve, reject) => {
+  const finished = new Promise<void>((resolve) => {
     resolveFinished = resolve;
-    rejectFinished = reject;
+  });
+  let resolveNotificationFailure!: (outcome: DownloadOutcome) => void;
+  const notificationFailure = new Promise<DownloadOutcome>((resolve) => {
+    resolveNotificationFailure = resolve;
   });
 
   const onEvent = (event: DownloadEvent) => {
@@ -208,40 +278,51 @@ export async function downloadUpdate(
     try {
       notify(onState, state);
     } catch (error) {
-      notificationFailed = true;
-      notificationError = error;
       acceptingEvents = false;
-      rejectFinished(error);
+      resolveNotificationFailure({ kind: "notification-failed", error });
       return;
     }
 
     if (event.event === "Finished") {
+      finishedReceived = true;
       acceptingEvents = false;
       resolveFinished();
     }
   };
 
-  let downloadFailed = false;
-  let downloadError: unknown;
-  try {
-    await Promise.all([update.download(onEvent), finished]);
-  } catch (error) {
+  const downloadOutcome = Promise.resolve()
+    .then(() => update.download(onEvent))
+    .then<DownloadOutcome, DownloadOutcome>(
+      () => ({ kind: "downloaded" }),
+      (error) => ({ kind: "failed", error }),
+    );
+  let outcome = await Promise.race([downloadOutcome, notificationFailure]);
+
+  if (outcome.kind === "notification-failed") {
     acceptingEvents = false;
-    if (notificationFailed) throw notificationError;
-    downloadFailed = true;
-    downloadError = error;
+    throw outcome.error;
   }
 
-  if (downloadFailed) {
+  if (outcome.kind === "failed") {
+    acceptingEvents = false;
     state = {
       ...state,
       phase: "error",
-      error: formatUpdateError(downloadError),
+      error: formatUpdateError(outcome.error),
     };
     notify(onState, state);
     return { state, update };
   }
 
+  if (!finishedReceived) {
+    const completion = await waitForFinished(finished, notificationFailure);
+    if (completion.kind === "notification-failed") {
+      acceptingEvents = false;
+      throw completion.error;
+    }
+  }
+
+  acceptingEvents = false;
   state = { ...state, phase: "ready" };
   notify(onState, state);
   return { state, update };

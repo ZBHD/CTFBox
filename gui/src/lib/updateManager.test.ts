@@ -117,6 +117,49 @@ describe("update manager", () => {
     expect(update.close).toHaveBeenCalledOnce();
   });
 
+  it("returns promptly when an aborted check adapter never settles", async () => {
+    const controller = new AbortController();
+    const neverSettles = new Promise<UpdateHandle | null>(() => undefined);
+    const resultPromise = checkLatest({
+      check: () => neverSettles,
+      silent: true,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+    const outcome = await Promise.race([
+      resultPromise,
+      new Promise<"timed-out">((resolve) => {
+        setTimeout(() => { resolve("timed-out"); }, 25);
+      }),
+    ]);
+
+    expect(outcome).toEqual({
+      state: { phase: "idle", downloadedBytes: 0 },
+    });
+  });
+
+  it("observes and closes an update that resolves after an aborted check returns", async () => {
+    const pendingCheck = deferred<UpdateHandle | null>();
+    const update = createUpdate();
+    const controller = new AbortController();
+    const resultPromise = checkLatest({
+      check: () => pendingCheck.promise,
+      silent: true,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+    setTimeout(() => { pendingCheck.resolve(update); }, 10);
+
+    await expect(resultPromise).resolves.toEqual({
+      state: { phase: "idle", downloadedBytes: 0 },
+    });
+    await vi.waitFor(() => {
+      expect(update.close).toHaveBeenCalledOnce();
+    });
+  });
+
   it("closes a checked update and preserves a state listener exception", async () => {
     const update = createUpdate();
     const listenerError = new Error("渲染状态失败");
@@ -249,6 +292,37 @@ describe("update manager", () => {
 
     expect(result.state).toMatchObject({ phase: "ready", downloadedBytes: 64 });
     expect(result.state.totalBytes).toBeUndefined();
+  });
+
+  it("falls back to a successful download when Finished is missing", async () => {
+    vi.useFakeTimers();
+    try {
+      let emit!: (event: DownloadEvent) => void;
+      const update = createUpdate({
+        download: vi.fn(async (onEvent: (event: DownloadEvent) => void) => {
+          emit = onEvent;
+          onEvent({ event: "Progress", data: { chunkLength: 64 } });
+        }),
+      });
+      const observed: UpdateState[] = [];
+      let result: Awaited<ReturnType<typeof downloadUpdate>> | undefined;
+      void downloadUpdate(update, availableState(), (state) => {
+        observed.push(state);
+      }).then((value) => { result = value; });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(result?.state).toMatchObject({
+        phase: "ready",
+        downloadedBytes: 64,
+      });
+      const notificationCount = observed.length;
+      emit({ event: "Progress", data: { chunkLength: 128 } });
+      emit({ event: "Finished" });
+      expect(observed).toHaveLength(notificationCount);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("preserves a download state listener exception", async () => {

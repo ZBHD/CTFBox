@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, SendHorizontal, TerminalSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, SendHorizontal, TerminalSquare } from "lucide-react";
 import { useState } from "react";
 import type { FlagHit } from "../../lib/flagDetector";
 import type { CommandRun } from "../../state/taskStore";
@@ -41,6 +41,7 @@ export function CommandTerminal({
   onSendInput,
 }: CommandTerminalProps) {
   const [input, setInput] = useState("");
+  const hasArguments = commandPreview.trim().split(/\s+/).length > 1;
   const submitInput = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!input.trim()) return;
@@ -57,11 +58,31 @@ export function CommandTerminal({
         <span className="terminal-count">{runs.length} 次运行</span>
       </header>
 
+      <div className="command-preview">
+        <div className="command-preview-heading">
+          <strong>当前命令</strong>
+          <span>{hasArguments ? "已根据参数更新" : "等待参数"}</span>
+        </div>
+        <div className="command-preview-line">
+          <span>$</span>
+          <code>{commandPreview || "等待生成命令"}</code>
+          <button
+            type="button"
+            title="复制命令"
+            aria-label="复制命令"
+            disabled={!commandPreview}
+            onClick={() => void navigator.clipboard.writeText(commandPreview)}
+          >
+            <Copy size={14} />
+          </button>
+        </div>
+      </div>
+
       <div className="terminal-scroll" aria-live="polite">
         {runs.length === 0 ? (
           <div className="terminal-empty">
             <span className="terminal-prompt">$</span>
-            <span>命令将在这里持续显示</span>
+            <span>运行后，命令和回显将保留在这里</span>
           </div>
         ) : (
           runs.map((run) => (
@@ -90,10 +111,6 @@ export function CommandTerminal({
         <button type="submit" title="发送输入"><SendHorizontal size={14} />发送输入</button>
       </form>}
 
-      <div className="command-preview">
-        <span>$</span>
-        <code>{commandPreview || "等待配置参数..."}</code>
-      </div>
     </section>
   );
 }

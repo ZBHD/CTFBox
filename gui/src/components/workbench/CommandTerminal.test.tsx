@@ -22,6 +22,21 @@ const runs: CommandRun[] = [
 ];
 
 describe("CommandTerminal", () => {
+  it("shows the live command preview above the run history", () => {
+    const html = renderToStaticMarkup(
+      <CommandTerminal
+        runs={[]}
+        commandPreview="sqlmap.cmd --url TARGET_URL --batch"
+      />,
+    );
+
+    expect(html).toContain("当前命令");
+    expect(html).toContain("已根据参数更新");
+    expect(html).toContain("复制命令");
+    expect(html).toContain("sqlmap.cmd --url TARGET_URL --batch");
+    expect(html.indexOf("command-preview")).toBeLessThan(html.indexOf("terminal-scroll"));
+  });
+
   it("keeps previous commands and output when a later command is rendered", () => {
     const html = renderToStaticMarkup(
       <CommandTerminal runs={runs} commandPreview="sqlmap.py -D main --tables" />,

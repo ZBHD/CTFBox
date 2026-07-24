@@ -16,6 +16,12 @@ interface ParameterPanelProps {
 
 const openSingleFile = () => open({ directory: false, multiple: false });
 
+function formatExamplePlaceholder(field: ParameterField) {
+  if (!field.placeholder) return undefined;
+  if (field.control === "file" || field.control === "result-select") return field.placeholder;
+  return `例如：${field.placeholder}`;
+}
+
 function ChoiceField({
   value,
   options,
@@ -117,7 +123,7 @@ function ParameterControl({
     return (
       <label className="parameter-field parameter-field-wide">
         {commonLabel}
-        <textarea value={String(value ?? "")} placeholder={field.placeholder} rows={3} onChange={(event) => onChange(field.id, event.target.value)} />
+        <textarea value={String(value ?? "")} placeholder={formatExamplePlaceholder(field)} rows={3} onChange={(event) => onChange(field.id, event.target.value)} />
       </label>
     );
   }
@@ -131,7 +137,7 @@ function ParameterControl({
           value={String(value ?? "")}
           min={field.min}
           max={field.max}
-          placeholder={field.placeholder}
+          placeholder={formatExamplePlaceholder(field)}
           onChange={(event) => onChange(field.id, event.target.value)}
         />
         {field.control === "file" && (

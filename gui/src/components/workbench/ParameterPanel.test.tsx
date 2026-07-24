@@ -4,6 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import { ParameterPanel } from "./ParameterPanel";
 
 describe("ParameterPanel", () => {
+  it("marks sample input placeholders as examples", () => {
+    const html = renderToStaticMarkup(
+      <ParameterPanel toolId="sqlmap" parameters={{}} onChange={() => undefined} />,
+    );
+
+    expect(html).toContain('placeholder="例如：http://127.0.0.1/item?id=1"');
+    expect(html).toContain('placeholder="例如：id=1&amp;name=test"');
+  });
+
   it("renders real SQLmap groups, search, and result-linked selectors", () => {
     const html = renderToStaticMarkup(
       <ParameterPanel

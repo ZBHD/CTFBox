@@ -15,14 +15,17 @@ export interface ToolSelection {
   mode?: string;
 }
 
-interface ToolRailProps {
+interface ToolRailBaseProps {
   selection: ToolSelection;
   settingsOpen: boolean;
-  availableUpdateVersion?: string;
   onSelect: (selection: ToolSelection) => void;
   onOpenSettings: () => void;
-  onOpenUpdate?: () => void;
 }
+
+type ToolRailProps = ToolRailBaseProps & (
+  | { availableUpdateVersion: string; onOpenUpdate: () => void }
+  | { availableUpdateVersion?: undefined; onOpenUpdate?: () => void }
+);
 
 const CRYPTO_TOOLS = [
   { id: "encoding", name: "编码转换", detail: "Base 系列与常用编码" },
@@ -43,7 +46,7 @@ export function ToolRail({
   availableUpdateVersion,
   onSelect,
   onOpenSettings,
-  onOpenUpdate = () => undefined,
+  onOpenUpdate,
 }: ToolRailProps) {
   const [openMenu, setOpenMenu] = useState<"crypto" | "misc" | null>(null);
 

@@ -9,6 +9,13 @@ const baseProps = {
   onOpenSettings: () => undefined,
 };
 
+function assertUpdateCallbackContract() {
+  // @ts-expect-error An available update must always provide a working callback.
+  return <ToolRail {...baseProps} availableUpdateVersion="0.2.0" />;
+}
+
+void assertUpdateCallbackContract;
+
 describe("ToolRail", () => {
   it("opens the available update from the brand area", () => {
     const onOpenUpdate = vi.fn();
@@ -30,7 +37,7 @@ describe("ToolRail", () => {
   });
 
   it("hides the update button when no update is available", () => {
-    const rail = create(<ToolRail {...baseProps} onOpenUpdate={() => undefined} />);
+    const rail = create(<ToolRail {...baseProps} />);
 
     expect(
       rail.root.findAll((node) =>

@@ -60,7 +60,9 @@ jobs:
         shell: pwsh
         run: |
           pnpm --dir gui typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm --dir gui test:unit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: 构建安装包
         shell: pwsh

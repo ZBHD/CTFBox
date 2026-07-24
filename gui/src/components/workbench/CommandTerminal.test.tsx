@@ -48,4 +48,12 @@ describe("CommandTerminal", () => {
 
     expect(html.match(/<mark>/g)?.length).toBe(2);
   });
+
+  it("shows a stdin input control while a run is active", () => {
+    const html = renderToStaticMarkup(
+      <CommandTerminal runs={runs} commandPreview="sqlmap.py -D main --tables" runningRunId="run-2" onSendInput={() => undefined} />,
+    );
+
+    expect(html).toContain("发送输入");
+  });
 });

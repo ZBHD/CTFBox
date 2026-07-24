@@ -136,6 +136,9 @@ textarea:-webkit-autofill:focus {
 .run-status-failed { border-color: #703c43; color: var(--danger); }
 .command-preview { min-height: 43px; display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: center; gap: 6px; padding: 8px 13px; border-top: 1px solid var(--border); background: #0d1419; }
 .command-preview code { overflow: hidden; color: #d2dce3; font: 10px/1.5 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-input { min-height: 42px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; padding: 6px 10px; border-top: 1px solid var(--border); background: #0c1318; }
+.terminal-input input { min-width: 0; height: 29px; padding: 0 9px; border: 1px solid #2b3943; border-radius: 3px; color: #cad5dc; background: #080e12; font: 9px "Cascadia Mono", Consolas, monospace; }
+.terminal-input button { min-width: 86px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #356b58; border-radius: 3px; color: #77d7b3; background: #13261f; font-size: 9px; cursor: pointer; }
 
 .parameter-content, .results-content { min-height: 0; overflow: auto; padding: 14px; }
 .field { display: block; margin-bottom: 14px; }
@@ -350,6 +353,52 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .toggle-on { border-color: #31815f; background: #193a2e; }
 .toggle-on span { transform: translateX(14px); background: var(--green); }
 
+/* Readable desktop typography */
+body { font-size: 13px; line-height: 1.45; }
+.app-shell button,
+.app-shell input,
+.app-shell textarea,
+.app-shell select { font-size: 12px; }
+.app-shell span,
+.app-shell label,
+.app-shell p,
+.app-shell small { font-size: 12px; }
+.app-shell strong { font-size: 13px; }
+.app-shell code,
+.app-shell pre { font-size: 12px; }
+.brand strong { font-size: 15px; }
+.tool-entry strong { font-size: 14px; }
+.workspace-identity h1,
+.settings-header h1 { font-size: 20px; }
+.panel-title h2,
+.settings-section h2 { font-size: 14px; }
+.nav-label,
+.workspace-kicker,
+.statusbar,
+.local-status,
+.run-status,
+.parameter-field-label code,
+.parameter-label code,
+.settings-value,
+.global-flag-item span { font-size: 11px; }
+.terminal-run-heading code,
+.terminal-run pre,
+.command-preview code,
+.terminal-input input,
+.field input,
+.settings-row-field input,
+.parameter-field > input,
+.parameter-field > div:last-child > input,
+.parameter-field textarea,
+.parameter-field .file-field input,
+.inline-control input,
+.codec-control select,
+.editor-pane textarea,
+.decode-result pre { font-size: 12px; }
+.decode-result > div strong,
+.decode-result > div span,
+.decode-result > div mark { font-size: 11px; }
+
 /* Light theme */
 :root[data-theme="light"] body { color: var(--text); background: var(--bg); }
 :root[data-theme="light"] * { scrollbar-color: #aebbc0 #eef2f3; }
@@ -408,6 +457,9 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 :root[data-theme="light"] .crypto-controls,
 :root[data-theme="light"] .command-preview,
 :root[data-theme="light"] .statusbar { background: #edf2f4; }
+:root[data-theme="light"] .terminal-input { background: #edf2f4; }
+:root[data-theme="light"] .terminal-input input { border-color: #c8d3d7; color: #25363e; background: #ffffff; }
+:root[data-theme="light"] .terminal-input button { border-color: #72aa95; color: #086b4b; background: #dcefe8; }
 :root[data-theme="light"] .edition-switch,
 :root[data-theme="light"] .local-segmented,
 :root[data-theme="light"] .codec-control select,

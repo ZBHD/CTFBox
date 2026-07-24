@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronRight, TerminalSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, SendHorizontal, TerminalSquare } from "lucide-react";
+import { useState } from "react";
 import type { FlagHit } from "../../lib/flagDetector";
 import type { CommandRun } from "../../state/taskStore";
 
@@ -7,6 +8,8 @@ interface CommandTerminalProps {
   commandPreview: string;
   onToggleRun?: (runId: string) => void;
   flagHits?: FlagHit[];
+  runningRunId?: string;
+  onSendInput?: (input: string) => void;
 }
 
 const STATUS_LABEL: Record<CommandRun["status"], string> = {
@@ -34,7 +37,16 @@ export function CommandTerminal({
   commandPreview,
   onToggleRun,
   flagHits = [],
+  runningRunId,
+  onSendInput,
 }: CommandTerminalProps) {
+  const [input, setInput] = useState("");
+  const submitInput = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!input.trim()) return;
+    onSendInput?.(input);
+    setInput("");
+  };
   return (
     <section className="terminal-panel" aria-label="命令终端">
       <header className="panel-header terminal-header">
@@ -72,6 +84,11 @@ export function CommandTerminal({
           ))
         )}
       </div>
+
+      {runningRunId && onSendInput && <form className="terminal-input" onSubmit={submitInput}>
+        <input aria-label="向工具发送输入" value={input} onChange={(event) => setInput(event.target.value)} placeholder="需要交互时输入内容" />
+        <button type="submit" title="发送输入"><SendHorizontal size={14} />发送输入</button>
+      </form>}
 
       <div className="command-preview">
         <span>$</span>

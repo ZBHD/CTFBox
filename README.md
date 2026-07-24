@@ -1,8 +1,6 @@
 # CTFBox
 
-CTFBox 是面向 CTF 场景的 Windows 桌面工具台，统一管理 Web、Crypto 与 Misc 工具。项目当前提供 SQLmap、SSTImap 的原版/汉化版入口，可视化参数编译，以及本地编码、哈希、异或和隐写分析工作区。
-
-> 当前 GUI 处于开发阶段。SQLmap 与 SSTImap 已可在界面中编译命令，真实进程执行与实时回显适配器仍在接入中；命令行启动器可直接使用。
+CTFBox 是面向 CTF 场景的 Windows 桌面工具台，统一管理 Web、Crypto 与 Misc 工具。项目当前提供 SQLmap、SSTImap 的原版/汉化版入口、应用内进程执行与实时回显，以及本地编码、哈希、异或和隐写分析工作区。
 
 ## 文档
 
@@ -14,8 +12,8 @@ CTFBox 是面向 CTF 场景的 Windows 桌面工具台，统一管理 Web、Cryp
 
 ## 当前功能
 
-- SQLmap：原版/汉化版切换、参数搜索、分组配置、命令预览和运行历史折叠。
-- SSTImap：目标、请求、爬虫、检测、载荷与常规参数配置。
+- SQLmap：原版/汉化版切换、参数搜索、分组配置、应用内实时回显、交互输入和运行历史折叠。
+- SSTImap：目标、请求、爬虫、检测、载荷与常规参数配置，并通过同一内置终端执行。
 - Crypto：Base64、Base32、Base58、Base85、Ascii85、Hex、URL、HTML 实体、Unicode 转义、二进制和八进制转换。
 - 自动解码：并行尝试全部编码，最多递归三层，去重并优先显示 Flag 结果。
 - 哈希与异或：SHA-1/256/384/512，以及循环 XOR。
@@ -25,6 +23,20 @@ CTFBox 是面向 CTF 场景的 Windows 桌面工具台，统一管理 Web、Cryp
 - 可扩展工具注册表：为后续工具适配器预留统一入口。
 
 ## 快速开始
+
+### Windows 安装版
+
+安装后只需启动 `CTFBox.exe`。SQLmap 与 SSTImap 由应用自带的 Python 运行时在后台执行，不会打开额外命令窗口。
+
+从源码构建 NSIS 安装包：
+
+```powershell
+cd gui
+pnpm install
+pnpm build
+```
+
+安装包输出到 `gui\src-tauri\target\release\bundle\nsis\`。
 
 ### 命令行工具
 
@@ -81,7 +93,8 @@ cd gui
 pnpm test:unit
 pnpm typecheck
 pnpm build:renderer
-cargo build --manifest-path src-tauri\Cargo.toml
+cargo test --manifest-path src-tauri\Cargo.toml
+pnpm build
 ```
 
 项目内集成的第三方工具遵循各自目录中的许可证和上游声明。

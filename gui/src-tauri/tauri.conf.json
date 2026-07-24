@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm run dev:renderer",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm run build:renderer",
+    "beforeBuildCommand": "pnpm run prepare:runtime && pnpm run build:renderer",
     "frontendDist": "../dist"
   },
   "app": {
@@ -26,6 +26,22 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "useLocalToolsDir": true,
+    "targets": ["nsis"],
+    "resources": {
+      "../../Original": "Original",
+      "../../CNversion": "CNversion",
+      "../../tools/ctfbox_launcher.py": "tools/ctfbox_launcher.py",
+      "resources/python": "python"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false
+      }
+    }
   }
 }

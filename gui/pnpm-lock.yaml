@@ -27,6 +27,9 @@ importers:
       '@tauri-apps/cli':
         specifier: ^2.8.0
         version: 2.11.4
+      '@tauri-apps/cli-win32-x64-msvc':
+        specifier: 2.11.4
+        version: 2.11.4
       '@types/react':
         specifier: ^18.3.12
         version: 18.3.31
@@ -1448,8 +1451,7 @@ snapshots:
   '@tauri-apps/cli-win32-ia32-msvc@2.11.4':
     optional: true
 
-  '@tauri-apps/cli-win32-x64-msvc@2.11.4':
-    optional: true
+  '@tauri-apps/cli-win32-x64-msvc@2.11.4': {}
 
   '@tauri-apps/cli@2.11.4':
     optionalDependencies:

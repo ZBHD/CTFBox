@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { SettingsPanel, type FlagSettings } from "./components/SettingsPanel";
 import { FlagHitStrip } from "./components/FlagHitStrip";
@@ -12,8 +12,9 @@ import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import { buildCommand, type ToolParameters } from "./lib/commandBuilder";
 import { detectFlags } from "./lib/flagDetector";
 import { getPlugin } from "./lib/pluginRegistry";
+import { createToolRunRequest } from "./lib/runnerProtocol";
 import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
-import { appendRun, clearTask, createTask, type TaskState } from "./state/taskStore";
+import { applyToolStreamEvent, appendOutput, appendRun, clearTask, createTask, finishRun, updateTaskContainingRun, type TaskState, type ToolStreamEvent } from "./state/taskStore";
 
 interface HealthStatus {
   app: string;
@@ -96,17 +97,74 @@ function App() {
   };
 
   const runCommand = () => {
-    const id = `run-${Date.now()}`;
+    if (task.status === "running") {
+      const activeRun = task.runs.find((run) => run.status === "running");
+      if (activeRun) {
+        void invoke("stop_tool", { runId: activeRun.id }).catch((error) => {
+          setTasks((current) => updateTaskContainingRun(current, activeRun.id, (owner) =>
+            appendOutput(owner, activeRun.id, `\n停止失败：${error instanceof Error ? error.message : String(error)}\n`),
+          ));
+        });
+      }
+      return;
+    }
+    const id = `run-${crypto.randomUUID()}`;
+    let request;
+    try {
+      request = createToolRunRequest(id, selection.toolId as "sqlmap" | "sstimap", task.edition, command);
+    } catch (error) {
+      updateCurrentTask((current) => ({ ...current, status: "failed", runs: [...current.runs, { id, argv: command, status: "failed", output: error instanceof Error ? error.message : "命令无效", collapsed: false }] }));
+      return;
+    }
     updateCurrentTask((current) => {
-      const next = appendRun(current, {
+      return appendRun(current, {
         id,
         argv: command,
-        status: "completed",
-        output: `命令已编译：${command.join(" ")}\n桌面执行通道将在工具适配器接入后输出实时回显。`,
+        status: "running",
+        output: `命令已启动：${command.join(" ")}\n`,
         collapsed: false,
       });
-      return { ...next, status: "completed" };
     });
+    const onEvent = new Channel<ToolStreamEvent>();
+    onEvent.onmessage = (event) => {
+      setTasks((current) => Object.fromEntries(Object.entries(current).map(([taskKey, state]) => [
+        taskKey,
+        applyToolStreamEvent(state, event),
+      ])));
+    };
+    void invoke("run_tool", { request, onEvent }).catch((error) => {
+      setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
+        finishRun(appendOutput(owner, id, `\n执行失败：${error instanceof Error ? error.message : String(error)}\n`), id, "failed"),
+      ));
+    });
+  };
+
+  const sendToolInput = (runId: string, input: string) => {
+    void invoke("send_tool_input", { runId, input }).catch((error) => {
+      setTasks((current) => updateTaskContainingRun(current, runId, (owner) =>
+        appendOutput(owner, runId, `\n发送输入失败：${error instanceof Error ? error.message : String(error)}\n`),
+      ));
+    });
+  };
+
+  const clearCurrentTask = () => {
+    const taskKey = key;
+    const activeRun = task.runs.find((run) => run.status === "running");
+    const clear = () => setTasks((current) => {
+      const currentTask = current[taskKey];
+      return currentTask ? { ...current, [taskKey]: clearTask(currentTask) } : current;
+    });
+    if (!activeRun) {
+      clear();
+      return;
+    }
+    void invoke("stop_tool", { runId: activeRun.id })
+      .then(clear)
+      .catch((error) => {
+        setTasks((current) => updateTaskContainingRun(current, activeRun.id, (owner) =>
+          appendOutput(owner, activeRun.id, `\n清空前停止失败：${error instanceof Error ? error.message : String(error)}\n`),
+        ));
+      });
   };
 
   const toggleRun = (runId: string) => {
@@ -142,11 +200,11 @@ function App() {
             executionControls={isWebTool}
             onEditionChange={(edition) => updateCurrentTask((current) => ({ ...current, edition }))}
             onRun={runCommand}
-            onClear={() => updateCurrentTask(clearTask)}
+            onClear={clearCurrentTask}
           />
           {isWebTool ? <div className="web-workspace-grid">
             <div className="web-output-stack">
-              <CommandTerminal runs={task.runs} commandPreview={command.join(" ")} onToggleRun={toggleRun} flagHits={flagHits} />
+              <CommandTerminal runs={task.runs} commandPreview={command.join(" ")} onToggleRun={toggleRun} flagHits={flagHits} runningRunId={task.runs.find((run) => run.status === "running")?.id} onSendInput={(input) => { const run = task.runs.find((item) => item.status === "running"); if (run) sendToolInput(run.id, input); }} />
               <ResultsPanel findings={task.findings} suggestions={task.suggestions} flagEnabled={flagSettings.enabled} flagPrefixes={prefixes} flagHits={flagHits} />
             </div>
             <ParameterPanel toolId={selection.toolId} parameters={task.parameters as ToolParameters} findings={task.findings} onChange={updateParameter} />

@@ -3,7 +3,10 @@ import {
   appendOutput,
   appendRun,
   clearTask,
+  finishRun,
   createTask,
+  applyToolStreamEvent,
+  updateTaskContainingRun,
   type CommandRun,
 } from "./taskStore";
 
@@ -34,5 +37,44 @@ describe("in-memory task state", () => {
     };
 
     expect(clearTask(populated)).toEqual(createTask("sqlmap"));
+  });
+
+  it("finishes a process run and updates the task status", () => {
+    const task = appendRun(createTask("sqlmap"), run);
+    expect(finishRun(task, "run-1", "completed").runs[0].status).toBe("completed");
+    expect(finishRun(task, "run-1", "failed").status).toBe("failed");
+  });
+
+  it("applies output and exit messages from the tool channel", () => {
+    const task = appendRun(createTask("sqlmap"), run);
+    const withOutput = applyToolStreamEvent(task, {
+      event: "output",
+      runId: "run-1",
+      stream: "stdout",
+      chunk: "sqlmap output\n",
+    });
+    const completed = applyToolStreamEvent(withOutput, {
+      event: "exit",
+      runId: "run-1",
+      status: "completed",
+      code: 0,
+    });
+
+    expect(completed.runs[0].output).toBe("sqlmap output\n");
+    expect(completed.runs[0].status).toBe("completed");
+    expect(completed.status).toBe("completed");
+  });
+
+  it("updates only the task that owns a run id", () => {
+    const sqlmap = appendRun(createTask("sqlmap"), run);
+    const sstimap = createTask("sstimap");
+    const tasks = updateTaskContainingRun(
+      { sqlmap, sstimap },
+      "run-1",
+      (task) => appendOutput(task, "run-1", "failed\n"),
+    );
+
+    expect(tasks.sqlmap.runs[0].output).toBe("failed\n");
+    expect(tasks.sstimap).toBe(sstimap);
   });
 });

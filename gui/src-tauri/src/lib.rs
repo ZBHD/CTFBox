@@ -8,6 +8,8 @@ use std::thread;
 use std::time::Duration;
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 
+const PYTHON_RUNTIME_FLAGS: [&str; 2] = ["-B", "-u"];
+
 #[derive(Serialize)]
 struct HealthStatus {
     app: &'static str,
@@ -250,7 +252,7 @@ fn run_tool(
     let python = python_program(&root);
     let mut command = Command::new(python);
     command
-        .arg("-u")
+        .args(PYTHON_RUNTIME_FLAGS)
         .arg(launcher)
         .args(launcher_arguments)
         .current_dir(&root)
@@ -345,7 +347,12 @@ fn stop_tool(manager: State<'_, ProcessManager>, run_id: String) -> Result<(), S
 
 #[cfg(test)]
 mod tests {
-    use super::{build_tool_arguments, decode_utf8_stream, ToolRunRequest};
+    use super::{build_tool_arguments, decode_utf8_stream, ToolRunRequest, PYTHON_RUNTIME_FLAGS};
+
+    #[test]
+    fn disables_python_bytecode_for_bundled_tools() {
+        assert_eq!(PYTHON_RUNTIME_FLAGS, ["-B", "-u"]);
+    }
 
     #[test]
     fn builds_original_and_chinese_launcher_arguments() {

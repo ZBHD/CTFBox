@@ -1,100 +1,80 @@
 # CTFBox
 
-CTFBox 是面向 CTF 场景的 Windows 桌面工具台，统一管理 Web、Crypto 与 Misc 工具。项目当前提供 SQLmap、SSTImap 的原版/汉化版入口、应用内进程执行与实时回显，以及本地编码、哈希、异或和隐写分析工作区。
+CTFBox 是面向 Windows 的 CTF 桌面工具箱。它把 SQLmap、SSTImap、常用编码与文件分析入口放进同一个界面，命令预览、运行回显和参数都保留在当前任务中，不需要另外打开命令窗口。
 
-## 文档
+当前版本为 `0.1.0`。
 
-- [完整使用说明](./使用说明.md)
-- [SQLmap 原版说明](./Original/sqlmap-1.10/使用说明.md)
-- [SQLmap 汉化版说明](./CNversion/sqlmap-1.10/使用说明.md)
-- [SSTImap 原版说明](./Original/SSTImap-master/使用说明.md)
-- [SSTImap 汉化版说明](./CNversion/SSTImap-master/使用说明.md)
+## 下载与安装
 
-## 当前功能
+1. 打开 [GitHub Releases](https://github.com/ZBHD/CTFBox/releases/latest)。
+2. 下载文件名以 `-setup.exe` 结尾的安装程序。
+3. 运行 Setup，并选择安装位置。
+4. 安装完成后，通过桌面快捷方式启动 CTFBox。
 
-- SQLmap：原版/汉化版切换、参数搜索、分组配置、应用内实时回显、交互输入和运行历史折叠。
-- SSTImap：目标、请求、爬虫、检测、载荷与常规参数配置，并通过同一内置终端执行。
-- Crypto：Base64、Base32、Base58、Base85、Ascii85、Hex、URL、HTML 实体、Unicode 转义、二进制和八进制转换。
-- 自动解码：并行尝试全部编码，最多递归三层，去重并优先显示 Flag 结果。
-- 哈希与异或：SHA-1/256/384/512，以及循环 XOR。
-- Misc：伪加密、LSB、图片隐写和音频隐写专用工作区。
-- 全局 Flag 识别：支持自定义检测头、明文与 Base64 检测。
-- 全局外观：亮色/暗色切换，并在本机保留主题选择。
-- 可扩展工具注册表：为后续工具适配器预留统一入口。
+安装包已经包含 SQLmap、SSTImap、汉化资源、Python 运行时和 WebView2 引导程序，不需要另外配置运行环境。
 
-## 快速开始
+## 能做什么
 
-### Windows 安装版
+### Web 工具
 
-前往 [GitHub Releases](https://github.com/ZBHD/CTFBox/releases/latest) 下载 `CTFBox_*_x64-setup.exe`。运行安装程序后可自行选择安装目录，安装完成时会自动创建桌面快捷方式；之后只需从桌面启动 `CTFBox.exe`。SQLmap 与 SSTImap 由应用自带的 Python 运行时在后台执行，不会打开额外命令窗口。
+- **SQLmap**：切换原版或汉化版，按分组填写参数，实时生成命令并在应用内执行。
+- **SSTImap**：配置 URL、请求体、注入位置、爬取和检测参数，并在同一终端查看回显。
+- 每次运行都会形成独立记录。执行下一条命令时，上一次回显仍然保留并可折叠。
+- 运行期间可以向工具发送交互输入，也可以停止或清空当前任务。
 
-从源码构建 NSIS 安装包：
+### Crypto
 
-```powershell
-cd gui
-pnpm install
-pnpm build
+- Base64、Base32、Base58、Base85、Ascii85、Hex、URL、HTML 实体、Unicode 转义、二进制和八进制转换。
+- 自动尝试最多三层解码，显示完整解码路径。
+- SHA-1、SHA-256、SHA-384、SHA-512 摘要计算。
+- 循环 XOR，支持 Hex、Base64 和文本输出。
+
+### Misc
+
+- 伪加密、LSB 隐写、图片隐写和音频隐写的文件载入、预览与参数配置界面。
+- 当前版本尚未接入实际分析适配器，不能生成修复文件或提取结果。
+
+### 全局设置
+
+- Flag 识别默认开启，可自定义一个或多个检测头。
+- 支持终端文本、结构化字段和 Base64 内容检测。
+- 支持亮色与暗色主题。
+
+
+### 自动解码并识别 Flag
+
+进入 **Crypto → 编码转换**，粘贴：
+
+```text
+5a6d78685a33746a64475a69623368665a4756746233303d
 ```
 
-安装包输出到 `gui\src-tauri\target\release\bundle\nsis\`。
+自动解码会依次识别 `Hex → Base64`，并把 `flag{ctfbox_demo}` 置顶高亮。
 
-### 命令行工具
+更多完整示例见 [CTFBox 使用说明](./使用说明.md)。
 
-需要 Python 3，并建议从项目根目录运行：
+## 命令行入口
+
+源码仓库还提供统一启动器，需要 Python 3，并从仓库根目录运行：
 
 ```powershell
-# SQLmap 原版
+# SQLmap 原版与汉化版
 .\sqlmap.cmd -h
-
-# SQLmap 汉化版
 .\sqlmap.cmd -cn -h
 
-# SSTImap 原版
+# SSTImap 原版与汉化版
 .\sstimap.cmd -h
-
-# SSTImap 汉化版
 .\sstimap.cmd -cn -h
 ```
 
-### GUI 开发模式
+`-cn` 必须是第一个参数。它只负责选择汉化版，不会传给 SQLmap 或 SSTImap。
 
-需要 Node.js、pnpm、Rust 和 Windows WebView2：
+## 用户文档
 
-```powershell
-cd gui
-pnpm install
-pnpm dev
-```
+- [CTFBox 完整使用说明](./使用说明.md)
+- [SQLmap 汉化版使用说明](./CNversion/sqlmap-1.10/使用说明.md)
+- [SSTImap 汉化版使用说明](./CNversion/SSTImap-master/使用说明.md)
 
-仅启动浏览器渲染层：
+## 第三方项目
 
-```powershell
-cd gui
-pnpm dev:renderer
-```
-
-## 项目结构
-
-```text
-CTFBox/
-├─ Original/          # 上游原版源码
-├─ CNversion/         # 仅存放汉化版源码
-├─ gui/               # React + TypeScript + Tauri 桌面界面
-├─ tools/             # 启动器与必要维护工具
-├─ sqlmap.cmd          # SQLmap 统一入口
-├─ sstimap.cmd         # SSTImap 统一入口
-└─ 使用说明.md         # CTFBox 详细使用手册
-```
-
-## 开发校验
-
-```powershell
-cd gui
-pnpm test:unit
-pnpm typecheck
-pnpm build:renderer
-cargo test --manifest-path src-tauri\Cargo.toml
-pnpm build
-```
-
-项目内集成的第三方工具遵循各自目录中的许可证和上游声明。
+SQLmap 与 SSTImap 的版权和许可证归各自项目所有。CTFBox 保留其目录中的许可证、上游说明和必要技术文本。

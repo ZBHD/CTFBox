@@ -18,3 +18,27 @@ setup/
 
 # Local test output
 artifacts/scenario-test/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs, coverage reports, and tool caches
+*.log
+.coverage
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+gui/.vite/
+*.tsbuildinfo

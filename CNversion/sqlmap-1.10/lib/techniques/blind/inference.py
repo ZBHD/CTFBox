@@ -742,7 +742,7 @@ def queryOutputLength(expression, payload):
     lengthExprUnescaped = agent.forgeQueryOutputLength(expression)
     count, length = bisection(payload, lengthExprUnescaped, charsetType=CHARSET_TYPE.DIGITS)
 
-    debugMsg = '在 %.2f 秒内执行了 %d quer%s' % (count, 'y' if count == 1 else "ies", calculateDeltaSeconds(start))
+    debugMsg = '执行了 %d%s查询，用时 %.2f 秒' % (count, " 次", calculateDeltaSeconds(start))
     logger.debug(debugMsg)
 
     if isinstance(length, six.string_types) and length.isspace():

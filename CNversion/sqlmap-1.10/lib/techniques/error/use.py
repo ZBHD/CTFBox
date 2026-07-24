@@ -464,7 +464,7 @@ def errorUse(expression, dump=False):
     duration = calculateDeltaSeconds(start)
 
     if not kb.bruteMode:
-        debugMsg = '在 %.2f 秒内执行了 %d quer%s' % (kb.counters[getTechnique()], 'y' if kb.counters[getTechnique()] == 1 else "ies", duration)
+        debugMsg = '执行了 %d%s查询，用时 %.2f 秒' % (kb.counters[getTechnique()], " 次", duration)
         logger.debug(debugMsg)
 
     return value

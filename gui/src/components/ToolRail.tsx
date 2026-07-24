@@ -49,6 +49,7 @@ export function ToolRail({
   onOpenUpdate,
 }: ToolRailProps) {
   const [openMenu, setOpenMenu] = useState<"crypto" | "misc" | null>(null);
+  const hasAvailableUpdate = availableUpdateVersion !== undefined;
 
   const renderPicker = (
     id: "crypto" | "misc",
@@ -105,10 +106,10 @@ export function ToolRail({
 
   return (
     <aside className="tool-rail">
-      <div className={`brand ${availableUpdateVersion ? "brand-update-available" : ""}`}>
+      <div className={`brand ${hasAvailableUpdate ? "brand-update-available" : ""}`}>
         <span className="brand-mark"><Box size={17} /></span>
         <span className="brand-copy"><strong>CTFBox</strong><small>桌面工具台</small></span>
-        {availableUpdateVersion && (
+        {hasAvailableUpdate && (
           <button
             className="brand-update"
             type="button"

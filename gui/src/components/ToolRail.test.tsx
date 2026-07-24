@@ -45,4 +45,23 @@ describe("ToolRail", () => {
       ),
     ).toHaveLength(0);
   });
+
+  it("treats an empty version string as a provided update", () => {
+    const onOpenUpdate = vi.fn();
+    const rail = create(
+      <ToolRail
+        {...baseProps}
+        availableUpdateVersion=""
+        onOpenUpdate={onOpenUpdate}
+      />,
+    );
+    const updateButton = rail.root.findByProps({
+      "aria-label": "发现新版本 v",
+      title: "发现新版本 v",
+    });
+
+    act(() => updateButton.props.onClick());
+
+    expect(onOpenUpdate).toHaveBeenCalledOnce();
+  });
 });

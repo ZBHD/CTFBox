@@ -7,6 +7,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallerConfigTests(unittest.TestCase):
+    def test_signed_latest_release_updater_is_configured(self):
+        config = json.loads(
+            (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        capability = json.loads(
+            (ROOT / "gui" / "src-tauri" / "capabilities" / "main.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertTrue(config["bundle"]["createUpdaterArtifacts"])
+
+        updater = config["plugins"]["updater"]
+        self.assertEqual(
+            updater["endpoints"],
+            ["https://github.com/ZBHD/CTFBox/releases/latest/download/latest.json"],
+        )
+        self.assertEqual(updater["windows"]["installMode"], "quiet")
+        self.assertTrue(updater["pubkey"].strip())
+
+        for permission in (
+            "updater:default",
+            "process:allow-restart",
+            "opener:default",
+        ):
+            self.assertIn(permission, capability["permissions"])
+
+        self.assertIn("TAURI_SIGNING_PRIVATE_KEY", workflow)
+        self.assertIn("*.nsis.zip", workflow)
+        self.assertIn("latest.json", workflow)
+
     def test_nsis_supports_custom_directory_and_creates_desktop_shortcut(self):
         config_path = ROOT / "gui" / "src-tauri" / "tauri.conf.json"
         config = json.loads(config_path.read_text(encoding="utf-8"))

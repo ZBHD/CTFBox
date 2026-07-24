@@ -365,6 +365,57 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .toggle-on { border-color: #31815f; background: #193a2e; }
 .toggle-on span { transform: translateX(14px); background: var(--green); }
 
+.settings-updates { min-width: 0; overflow: hidden; }
+.update-section-title { min-height: 78px; }
+.update-channel { flex: 0 0 auto; padding: 3px 7px; border: 1px solid #35624f; border-radius: 3px; color: #79caaa; background: #12241d; font: 600 11px/1.3 "Cascadia Mono", Consolas, monospace; }
+.update-product { min-width: 0; display: grid; grid-template-columns: 40px minmax(120px, 1fr) minmax(230px, auto); align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border-soft); }
+.update-product-mark { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid #4bd9a5; border-radius: 6px; color: #07150f; background: var(--green); box-shadow: 3px 3px 0 #19372c; font: 700 17px/1 "Cascadia Mono", Consolas, monospace; }
+.update-product-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.update-product-copy strong { color: #e3ebef; font-size: 15px; }
+.update-product-copy span { color: var(--muted); font-size: 12px; }
+.update-version-grid { display: grid; grid-template-columns: repeat(2, minmax(96px, 1fr)); border: 1px solid #28353e; border-radius: 5px; background: #0c1217; }
+.update-version-item { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; }
+.update-version-item + .update-version-item { border-left: 1px solid #28353e; }
+.update-version-item span { color: #687984; font-size: 12px; }
+.update-version-item strong { overflow-wrap: anywhere; color: #cbd6dc; font: 600 13px/1.35 "Cascadia Mono", Consolas, monospace; }
+.update-version-item-accent strong { color: #6ed8b1; }
+.update-release-meta { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 9px 16px; border-bottom: 1px solid var(--border-soft); }
+.update-release-meta span { color: var(--muted); font-size: 12px; }
+.update-release-meta strong { overflow-wrap: anywhere; color: #b9c5cd; font: 500 12px/1.4 "Cascadia Mono", Consolas, monospace; text-align: right; }
+.update-notes { padding: 13px 16px; border-bottom: 1px solid var(--border-soft); }
+.update-notes > strong { color: #b9c5cd; font-size: 13px; }
+.update-notes p { max-height: 116px; margin: 7px 0 0; overflow: auto; color: #8d9ba5; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.update-status { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 16px; border-bottom: 1px solid var(--border-soft); }
+.update-status > div, .update-status-ready { min-width: 0; }
+.update-status > div:not(.update-progress-heading) { display: flex; align-items: center; gap: 10px; }
+.update-status svg { flex: 0 0 auto; }
+.update-status div > span, .update-status > span, .update-status-ready > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.update-status strong { color: #c7d2d9; font-size: 13px; }
+.update-status small { color: #788792; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.update-status-available svg, .update-status-ready svg { color: var(--green); }
+.update-status-error svg, .update-status-error strong { color: var(--danger); }
+.update-status-error small { color: #c68b91; }
+.update-primary-action, .update-secondary-action, .update-links button { min-height: 34px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border-radius: 4px; cursor: pointer; }
+.update-primary-action { border: 1px solid #4be0aa; color: #07160f; background: var(--green); font-weight: 650; }
+.update-primary-action:hover { border-color: #82ebc5; background: #63dfb2; }
+.update-secondary-action, .update-links button { border: 1px solid #34414b; color: #a4b1ba; background: #151d23; }
+.update-secondary-action:hover, .update-links button:hover { border-color: #4a7d6a; color: #79d9b5; background: #15251f; }
+.update-primary-action:disabled, .update-secondary-action:disabled, .update-links button:disabled { opacity: .5; cursor: not-allowed; }
+.update-status-progress { min-height: 96px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 14px; }
+.update-progress-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.update-progress-heading span, .update-progress-bytes { color: #7f909a; font: 12px/1.4 "Cascadia Mono", Consolas, monospace; }
+.update-progress-track { height: 8px; grid-column: 1 / -1; overflow: hidden; border: 1px solid #2d3b44; border-radius: 4px; background: #090f13; }
+.update-progress-track > span { height: 100%; display: block; margin: 0; background: var(--green); }
+.update-progress-indeterminate > span { width: 100% !important; opacity: .35; }
+.update-progress-bytes { grid-column: 1 / -1; margin: 0; text-align: right; }
+.update-links { min-height: 50px; display: flex; align-items: center; gap: 8px; padding: 8px 16px; }
+
+@media (max-width: 1050px) {
+  .settings-layout { grid-template-columns: 164px minmax(0, 1fr); gap: 22px; padding: 22px; }
+  .update-product { grid-template-columns: 40px minmax(0, 1fr); }
+  .update-version-grid { grid-column: 1 / -1; }
+}
+
 /* Readable desktop typography */
 body { font-size: 13px; line-height: 1.45; }
 .app-shell button,
@@ -441,6 +492,25 @@ body { font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] .choice-option.active,
 :root[data-theme="light"] .chip-option.active,
 :root[data-theme="light"] .theme-option.active { border-color: #73aa96; color: #086b4b; background: #dcefe8; }
+:root[data-theme="light"] .update-channel { border-color: #8ab9a7; color: #086b4b; background: #e2f1eb; }
+:root[data-theme="light"] .update-product-mark { color: #ffffff; box-shadow: 3px 3px 0 #bdd9ce; }
+:root[data-theme="light"] .update-product-copy strong,
+:root[data-theme="light"] .update-status strong,
+:root[data-theme="light"] .update-notes > strong { color: #2d4048; }
+:root[data-theme="light"] .update-version-grid { border-color: #ccd8dc; background: #f6f9fa; }
+:root[data-theme="light"] .update-version-item + .update-version-item { border-color: #ccd8dc; }
+:root[data-theme="light"] .update-version-item strong { color: #354850; }
+:root[data-theme="light"] .update-version-item-accent strong { color: #087153; }
+:root[data-theme="light"] .update-release-meta strong,
+:root[data-theme="light"] .update-notes p,
+:root[data-theme="light"] .update-status small { color: #61747d; }
+:root[data-theme="light"] .update-status-error strong { color: #a82e3b; }
+:root[data-theme="light"] .update-status-error small { color: #9a4c55; }
+:root[data-theme="light"] .update-secondary-action,
+:root[data-theme="light"] .update-links button { border-color: #c6d1d5; color: #536771; background: #f3f6f7; }
+:root[data-theme="light"] .update-secondary-action:hover,
+:root[data-theme="light"] .update-links button:hover { border-color: #72aa95; color: #086b4b; background: #dcefe8; }
+:root[data-theme="light"] .update-progress-track { border-color: #c4d0d4; background: #e5ecee; }
 :root[data-theme="light"] .brand strong,
 :root[data-theme="light"] .workspace-identity h1,
 :root[data-theme="light"] .settings-header h1,

@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "useLocalToolsDir": true,
     "targets": ["nsis"],
     "resources": {
@@ -42,6 +43,17 @@
         "languages": ["SimpChinese", "English"],
         "displayLanguageSelector": false,
         "installerHooks": "nsis/installer-hooks.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/ZBHD/CTFBox/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFGRENBNkM4MEQ3RDVBRjEKUldUeFduME55S2JjSDFZSStLcnV3SGc1em03VHVnRGVURnZzTEJXdU5sKzBUR1RuT0tiNU5TRXkK",
+      "windows": {
+        "installMode": "quiet"
       }
     }
   }

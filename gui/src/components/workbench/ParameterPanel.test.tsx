@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { act, create } from "react-test-renderer";
+import { describe, expect, it, vi } from "vitest";
 import { ParameterPanel } from "./ParameterPanel";
 
 describe("ParameterPanel", () => {
@@ -24,5 +25,30 @@ describe("ParameterPanel", () => {
     expect(html).toContain("枚举");
     expect(html).toContain("2 个已发现");
     expect(html).toContain("--url");
+  });
+
+  it("opens the native file picker and stores the selected path", async () => {
+    const onChange = vi.fn();
+    const openFileDialog = vi.fn().mockResolvedValue("C:\\fixtures\\sqlmap.ini");
+    const panel = create(
+      <ParameterPanel
+        toolId="sqlmap"
+        parameters={{}}
+        onChange={onChange}
+        {...{ openFileDialog }}
+      />,
+    );
+
+    act(() => {
+      panel.root.findAllByType("button").find((button) => button.props.children === "目标")?.props.onClick();
+    });
+    const fileButtons = panel.root.findAllByProps({ title: "选择文件" });
+
+    await act(async () => {
+      await fileButtons[2]?.props.onClick?.();
+    });
+
+    expect(openFileDialog).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledWith("configFile", "C:\\fixtures\\sqlmap.ini");
   });
 });

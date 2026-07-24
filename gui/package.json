@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-dialog": "~2.7.2",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -24,7 +25,9 @@
     "@tauri-apps/cli-win32-x64-msvc": "2.11.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/react-test-renderer": "18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "react-test-renderer": "18.3.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vitest": "^2.1.8"

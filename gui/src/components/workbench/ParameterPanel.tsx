@@ -1,3 +1,4 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { Check, ChevronDown, FileUp, Search, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
@@ -10,7 +11,10 @@ interface ParameterPanelProps {
   parameters: ToolParameters;
   findings?: StructuredFinding[];
   onChange: (name: string, value: string | boolean) => void;
+  openFileDialog?: () => Promise<string | null>;
 }
+
+const openSingleFile = () => open({ directory: false, multiple: false });
 
 function ChoiceField({
   value,
@@ -62,11 +66,13 @@ function ParameterControl({
   value,
   findings,
   onChange,
+  openFileDialog,
 }: {
   field: ParameterField;
   value: string | boolean | number | undefined;
   findings: StructuredFinding[];
   onChange: ParameterPanelProps["onChange"];
+  openFileDialog: () => Promise<string | null>;
 }) {
   if (field.control === "boolean") {
     return <BooleanField field={field} checked={Boolean(value)} onChange={onChange} />;
@@ -128,13 +134,24 @@ function ParameterControl({
           placeholder={field.placeholder}
           onChange={(event) => onChange(field.id, event.target.value)}
         />
-        {field.control === "file" && <button type="button" title="选择文件"><FileUp size={14} /></button>}
+        {field.control === "file" && (
+          <button
+            type="button"
+            title="选择文件"
+            onClick={async () => {
+              const selected = await openFileDialog();
+              if (selected) onChange(field.id, selected);
+            }}
+          >
+            <FileUp size={14} />
+          </button>
+        )}
       </div>
     </label>
   );
 }
 
-export function ParameterPanel({ toolId, parameters, findings = [], onChange }: ParameterPanelProps) {
+export function ParameterPanel({ toolId, parameters, findings = [], onChange, openFileDialog = openSingleFile }: ParameterPanelProps) {
   const schema = getToolSchema(toolId);
   const [activeGroup, setActiveGroup] = useState("quick");
   const [query, setQuery] = useState("");
@@ -185,7 +202,7 @@ export function ParameterPanel({ toolId, parameters, findings = [], onChange }: 
           </div>
         </div>
         <div className="parameter-fields">
-          {visibleFields.map((field) => <ParameterControl key={field.id} field={field} value={parameters[field.id]} findings={findings} onChange={onChange} />)}
+          {visibleFields.map((field) => <ParameterControl key={field.id} field={field} value={parameters[field.id]} findings={findings} onChange={onChange} openFileDialog={openFileDialog} />)}
           {visibleFields.length === 0 && <div className="parameter-no-results">没有匹配的参数</div>}
         </div>
       </div>

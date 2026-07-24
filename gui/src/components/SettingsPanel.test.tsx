@@ -1,3 +1,5 @@
+// @ts-expect-error Vitest runs in Node; the renderer tsconfig intentionally omits Node types.
+import { readFileSync } from "node:fs";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -22,6 +24,8 @@ const idleState: UpdateState = {
   phase: "idle",
   downloadedBytes: 0,
 };
+
+const stylesheet = readFileSync(new URL("../index.css", import.meta.url), "utf8");
 
 function controlledProps(
   updateState: UpdateState = idleState,
@@ -61,6 +65,13 @@ function findButton(root: ReactTestInstance, label: string) {
 }
 
 describe("SettingsPanel", () => {
+  it("keeps the desktop shell fixed while the settings area owns minimum-window scrolling", () => {
+    expect(stylesheet).toMatch(/html, body, #root\s*\{[^}]*min-width:\s*900px;[^}]*min-height:\s*600px;/s);
+    expect(stylesheet).toMatch(/body\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(stylesheet).toMatch(/\.settings-layout\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*auto;/s);
+    expect(stylesheet).not.toMatch(/\.settings-updates\s*\{[^}]*overflow:\s*hidden;/s);
+  });
+
   it("exposes an appearance section for the persisted theme", () => {
     const html = renderToStaticMarkup(
       <SettingsPanel value={settings} theme="dark" onChange={() => undefined} onThemeChange={() => undefined} />,

@@ -39,7 +39,7 @@
 }
 
 * { box-sizing: border-box; letter-spacing: 0; }
-html, body, #root { width: 100%; min-width: 960px; height: 100%; min-height: 620px; }
+html, body, #root { width: 100%; min-width: 900px; height: 100%; min-height: 600px; }
 body { margin: 0; overflow: hidden; }
 button, input { font: inherit; }
 button { color: inherit; }
@@ -337,7 +337,7 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 
 .settings-page { background: var(--bg); }
 .settings-header { justify-content: flex-start; }
-.settings-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: 190px minmax(0, 700px); align-content: start; gap: 34px; padding: 28px; overflow: auto; }
+.settings-layout { min-width: 0; min-height: 0; flex: 1; display: grid; grid-template-columns: 190px minmax(0, 700px); align-content: start; gap: 34px; padding: 28px; overflow: auto; }
 .settings-nav { display: flex; flex-direction: column; gap: 3px; }
 .settings-nav button { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 0; border-radius: 3px; color: #73818c; background: transparent; font-size: 10px; text-align: left; cursor: pointer; }
 .settings-nav button.active { color: #72dbb6; background: #13241e; }
@@ -365,7 +365,7 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .toggle-on { border-color: #31815f; background: #193a2e; }
 .toggle-on span { transform: translateX(14px); background: var(--green); }
 
-.settings-updates { min-width: 0; overflow: hidden; }
+.settings-updates { min-width: 0; }
 .update-section-title { min-height: 78px; }
 .update-channel { flex: 0 0 auto; padding: 3px 7px; border: 1px solid #35624f; border-radius: 3px; color: #79caaa; background: #12241d; font: 600 11px/1.3 "Cascadia Mono", Consolas, monospace; }
 .update-product { min-width: 0; display: grid; grid-template-columns: 40px minmax(120px, 1fr) minmax(230px, auto); align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border-soft); }

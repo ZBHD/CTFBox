@@ -2,6 +2,7 @@ import {
   Binary,
   Box,
   ChevronDown,
+  CircleArrowUp,
   Code2,
   Database,
   FileSearch,
@@ -17,8 +18,10 @@ export interface ToolSelection {
 interface ToolRailProps {
   selection: ToolSelection;
   settingsOpen: boolean;
+  availableUpdateVersion?: string;
   onSelect: (selection: ToolSelection) => void;
   onOpenSettings: () => void;
+  onOpenUpdate?: () => void;
 }
 
 const CRYPTO_TOOLS = [
@@ -34,7 +37,14 @@ const MISC_TOOLS = [
   { id: "audio", name: "音频隐写", detail: "频谱与波形数据分析" },
 ];
 
-export function ToolRail({ selection, settingsOpen, onSelect, onOpenSettings }: ToolRailProps) {
+export function ToolRail({
+  selection,
+  settingsOpen,
+  availableUpdateVersion,
+  onSelect,
+  onOpenSettings,
+  onOpenUpdate = () => undefined,
+}: ToolRailProps) {
   const [openMenu, setOpenMenu] = useState<"crypto" | "misc" | null>(null);
 
   const renderPicker = (
@@ -92,9 +102,20 @@ export function ToolRail({ selection, settingsOpen, onSelect, onOpenSettings }: 
 
   return (
     <aside className="tool-rail">
-      <div className="brand">
+      <div className={`brand ${availableUpdateVersion ? "brand-update-available" : ""}`}>
         <span className="brand-mark"><Box size={17} /></span>
-        <span><strong>CTFBox</strong><small>桌面工具台</small></span>
+        <span className="brand-copy"><strong>CTFBox</strong><small>桌面工具台</small></span>
+        {availableUpdateVersion && (
+          <button
+            className="brand-update"
+            type="button"
+            title={`发现新版本 v${availableUpdateVersion}`}
+            aria-label={`发现新版本 v${availableUpdateVersion}`}
+            onClick={onOpenUpdate}
+          >
+            <CircleArrowUp aria-hidden="true" size={16} />
+          </button>
+        )}
       </div>
       <nav aria-label="工具导航">
         <span className="nav-label">WEB 工具</span>

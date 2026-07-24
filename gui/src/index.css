@@ -62,11 +62,16 @@ textarea:-webkit-autofill:focus {
 
 .app-shell { height: 100vh; display: grid; grid-template-columns: 216px minmax(0, 1fr); background: var(--bg); }
 .tool-rail { position: relative; z-index: 5; display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--border); background: #090e13; }
-.brand { height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 15px; border-bottom: 1px solid var(--border); }
-.brand > span:last-child { display: flex; min-width: 0; flex-direction: column; }
+.brand { height: 64px; display: grid; grid-template-columns: 29px minmax(0, 1fr); align-items: center; gap: 10px; padding: 0 15px; border-bottom: 1px solid var(--border); }
+.brand-update-available { grid-template-columns: 29px minmax(0, 1fr) 30px; }
+.brand-copy { display: flex; min-width: 0; flex-direction: column; }
 .brand strong { color: #edf4f8; font-size: 14px; font-weight: 650; }
 .brand small { margin-top: 2px; color: var(--muted-2); font-size: 9px; }
 .brand-mark { width: 29px; height: 29px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid #4ee4ad; border-radius: 4px; color: #091711; background: var(--green); box-shadow: 4px 4px 0 #19372c; }
+.brand-update { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 1px solid #34765c; border-radius: 50%; color: #71dfb7; background: #13261f; cursor: pointer; }
+.brand-update:hover { border-color: var(--green); color: #a0f0d3; background: #193329; }
+.brand-update:focus-visible { outline-color: var(--green); }
+.brand-update svg { width: 16px; height: 16px; flex: 0 0 auto; }
 
 .tool-rail nav { flex: 1; padding: 16px 8px; }
 .nav-label { display: block; padding: 0 9px 7px; color: var(--muted-2); font: 650 9px/1.4 "Cascadia Mono", Consolas, monospace; text-transform: uppercase; }
@@ -440,6 +445,8 @@ body { font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] .workspace-identity h1,
 :root[data-theme="light"] .settings-header h1,
 :root[data-theme="light"] .settings-section h2 { color: #16252c; }
+:root[data-theme="light"] .brand-update { border-color: #6ea991; color: #087153; background: #e0f2eb; }
+:root[data-theme="light"] .brand-update:hover { border-color: #15956d; color: #055b43; background: #cfe9df; }
 :root[data-theme="light"] .tool-entry,
 :root[data-theme="light"] .settings-link,
 :root[data-theme="light"] .panel-title,

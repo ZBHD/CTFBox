@@ -13,5 +13,8 @@ gui/src-tauri/target/
 gui/src-tauri/gen/
 gui/src-tauri/resources/
 
+# Local installer output
+setup/
+
 # Local test output
 artifacts/scenario-test/

@@ -88,7 +88,7 @@ function UpdateStatus({ state, onCheckUpdate, onStartUpdate }: {
   if (state.phase === "available") {
     return (
       <div className="update-status update-status-available">
-        <div><Download size={18} /><span><strong>发现新版本</strong><small>安装包将在应用内下载并校验</small></span></div>
+        <div role="status"><Download size={18} /><span><strong>发现新版本</strong><small>安装包将在应用内下载并校验</small></span></div>
         <button className="update-primary-action" type="button" onClick={onStartUpdate}>
           更新到 v{state.latestVersion ?? "--"}
         </button>
@@ -137,10 +137,13 @@ function UpdateStatus({ state, onCheckUpdate, onStartUpdate }: {
   }
 
   if (state.phase === "error") {
+    const isDownloadError = state.latestVersion !== undefined;
     return (
       <div className="update-status update-status-error" role="alert">
-        <div><AlertTriangle size={18} /><span><strong>检查更新失败</strong><small>{formatUpdateError(state.error)}</small></span></div>
-        <button className="update-secondary-action" type="button" onClick={onCheckUpdate}>重试</button>
+        <div><AlertTriangle size={18} /><span><strong>{isDownloadError ? "下载更新失败" : "检查更新失败"}</strong><small>{formatUpdateError(state.error)}</small></span></div>
+        <button className="update-secondary-action" type="button" onClick={isDownloadError ? onStartUpdate : onCheckUpdate}>
+          {isDownloadError ? "重新下载" : "重新检查"}
+        </button>
       </div>
     );
   }

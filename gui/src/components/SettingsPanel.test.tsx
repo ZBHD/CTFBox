@@ -64,12 +64,44 @@ function findButton(root: ReactTestInstance, label: string) {
   return root.findAllByType("button").find((button) => textContent(button).includes(label));
 }
 
+function cssRuleColor(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rule = stylesheet.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, "s"));
+  const color = rule?.[1].match(/(?:^|;)\s*color:\s*(#[0-9a-f]{6})/i)?.[1];
+  if (!color) throw new Error(`CSS rule has no hex color: ${selector}`);
+  return color;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const luminance = (hex: string) => {
+    const channels = hex.slice(1).match(/.{2}/g)?.map((value) => Number.parseInt(value, 16) / 255) ?? [];
+    const linear = channels.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+  const lighter = Math.max(luminance(foreground), luminance(background));
+  const darker = Math.min(luminance(foreground), luminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe("SettingsPanel", () => {
   it("keeps the desktop shell fixed while the settings area owns minimum-window scrolling", () => {
     expect(stylesheet).toMatch(/html, body, #root\s*\{[^}]*min-width:\s*900px;[^}]*min-height:\s*600px;/s);
     expect(stylesheet).toMatch(/body\s*\{[^}]*overflow:\s*hidden;/s);
     expect(stylesheet).toMatch(/\.settings-layout\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*auto;/s);
     expect(stylesheet).not.toMatch(/\.settings-updates\s*\{[^}]*overflow:\s*hidden;/s);
+  });
+
+  it("keeps update metadata and progress text above WCAG AA contrast", () => {
+    const colors = [
+      [cssRuleColor(".update-version-item span"), "#0c1217"],
+      [cssRuleColor(':root[data-theme="light"] .update-version-item span'), "#f6f9fa"],
+      [cssRuleColor(".update-progress-heading span, .update-progress-bytes"), "#10171d"],
+      [cssRuleColor(':root[data-theme="light"] .update-progress-heading span, :root[data-theme="light"] .update-progress-bytes'), "#ffffff"],
+    ];
+
+    for (const [foreground, background] of colors) {
+      expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it("exposes an appearance section for the persisted theme", () => {
@@ -113,6 +145,7 @@ describe("SettingsPanel", () => {
       />,
     );
     const content = textContent(panel.root);
+    const announcement = panel.root.findByProps({ role: "status" });
 
     expect(content).toContain("当前版本");
     expect(content).toContain("v0.1.0");
@@ -120,6 +153,8 @@ describe("SettingsPanel", () => {
     expect(content).toContain("v0.2.0");
     expect(content).toContain("2026-07-24");
     expect(content).toContain("新增应用内更新。");
+    expect(textContent(announcement)).toContain("发现新版本");
+    expect(textContent(announcement)).not.toContain("更新到");
 
     act(() => findButton(panel.root, "更新到 v0.2.0")?.props.onClick());
     expect(onStartUpdate).toHaveBeenCalledTimes(1);
@@ -148,6 +183,38 @@ describe("SettingsPanel", () => {
   });
 
   it.each([
+    [0, 100, 0, "0%"],
+    [125, 100, 100, "100%"],
+  ] as const)("clamps download progress %s/%s to %s%%", (downloadedBytes, totalBytes, expected, label) => {
+    const panel = create(
+      <SettingsPanel {...controlledProps({ phase: "downloading", downloadedBytes, totalBytes })} />,
+    );
+    const progress = panel.root.findByProps({ role: "progressbar" });
+
+    expect(progress.props["aria-valuenow"]).toBe(expected);
+    expect(textContent(panel.root)).toContain(label);
+  });
+
+  it("keeps unknown download totals indeterminate", () => {
+    const panel = create(
+      <SettingsPanel {...controlledProps({ phase: "downloading", downloadedBytes: 512 })} />,
+    );
+    const progress = panel.root.findByProps({ role: "progressbar" });
+
+    expect(progress.props["aria-valuenow"]).toBeUndefined();
+    expect(progress.props["aria-valuetext"]).toBe("512 B 已下载");
+    expect(textContent(panel.root)).toContain("计算进度中");
+  });
+
+  it("disables repeated checks while checking", () => {
+    const panel = create(
+      <SettingsPanel {...controlledProps({ phase: "checking", downloadedBytes: 0 })} />,
+    );
+
+    expect(findButton(panel.root, "正在检查")?.props.disabled).toBe(true);
+  });
+
+  it.each([
     ["checking", "正在检查更新"],
     ["latest", "当前已是最新版本"],
     ["ready", "更新已准备好"],
@@ -159,8 +226,9 @@ describe("SettingsPanel", () => {
     expect(html).toContain(expected);
   });
 
-  it("formats an update error and retries the check", () => {
+  it("formats a check error and checks again", () => {
     const onCheckUpdate = vi.fn();
+    const onStartUpdate = vi.fn();
     const panel = create(
       <SettingsPanel
         {...controlledProps({
@@ -168,13 +236,37 @@ describe("SettingsPanel", () => {
           currentVersion: "0.1.0",
           downloadedBytes: 0,
           error: "  无法连接更新服务  ",
-        }, { onCheckUpdate })}
+        }, { onCheckUpdate, onStartUpdate })}
       />,
     );
 
+    expect(textContent(panel.root)).toContain("检查更新失败");
     expect(textContent(panel.root)).toContain("无法连接更新服务");
-    act(() => findButton(panel.root, "重试")?.props.onClick());
+    act(() => findButton(panel.root, "重新检查")?.props.onClick());
     expect(onCheckUpdate).toHaveBeenCalledTimes(1);
+    expect(onStartUpdate).not.toHaveBeenCalled();
+  });
+
+  it("formats a download error and downloads again", () => {
+    const onCheckUpdate = vi.fn();
+    const onStartUpdate = vi.fn();
+    const panel = create(
+      <SettingsPanel
+        {...controlledProps({
+          phase: "error",
+          currentVersion: "0.1.0",
+          latestVersion: "0.2.0",
+          downloadedBytes: 0,
+          error: "  签名校验失败  ",
+        }, { onCheckUpdate, onStartUpdate })}
+      />,
+    );
+
+    expect(textContent(panel.root)).toContain("下载更新失败");
+    expect(textContent(panel.root)).toContain("签名校验失败");
+    act(() => findButton(panel.root, "重新下载")?.props.onClick());
+    expect(onStartUpdate).toHaveBeenCalledTimes(1);
+    expect(onCheckUpdate).not.toHaveBeenCalled();
   });
 
   it("delegates update links and manual checks without an official website link", () => {

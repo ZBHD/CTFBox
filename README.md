@@ -26,7 +26,7 @@ CTFBox 是面向 CTF 场景的 Windows 桌面工具台，统一管理 Web、Cryp
 
 ### Windows 安装版
 
-安装后只需启动 `CTFBox.exe`。SQLmap 与 SSTImap 由应用自带的 Python 运行时在后台执行，不会打开额外命令窗口。
+前往 [GitHub Releases](https://github.com/ZBHD/CTFBox/releases/latest) 下载 `CTFBox_*_x64-setup.exe`。运行安装程序后可自行选择安装目录，安装完成时会自动创建桌面快捷方式；之后只需从桌面启动 `CTFBox.exe`。SQLmap 与 SSTImap 由应用自带的 Python 运行时在后台执行，不会打开额外命令窗口。
 
 从源码构建 NSIS 安装包：
 

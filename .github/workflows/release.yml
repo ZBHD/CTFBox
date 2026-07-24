@@ -1,0 +1,49 @@
+name: 发布 Windows 安装包
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    name: 构建并发布 Windows 安装包
+    runs-on: windows-latest
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 配置 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 安装 pnpm
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.6.0 --activate
+
+      - name: 安装前端依赖
+        shell: pwsh
+        run: pnpm --dir gui install --frozen-lockfile
+
+      - name: 构建安装包
+        shell: pwsh
+        run: pnpm --dir gui build
+
+      - name: 发布到 GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $asset = Get-Item "gui/src-tauri/target/release/bundle/nsis/*-setup.exe"
+          $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
+          "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
+          gh release create $env:GITHUB_REF_NAME $asset.FullName "SHA256SUMS.txt" --title "CTFBox $env:GITHUB_REF_NAME" --generate-notes

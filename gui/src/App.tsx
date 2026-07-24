@@ -11,6 +11,7 @@ import { ParameterPanel } from "./components/workbench/ParameterPanel";
 import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import { buildCommand, type ToolParameters } from "./lib/commandBuilder";
 import { detectFlags } from "./lib/flagDetector";
+import { DEFAULT_FLAG_PREFIXES, loadFlagPrefixes, saveFlagPrefixes } from "./lib/flagPrefixPreference";
 import { getPlugin } from "./lib/pluginRegistry";
 import { createToolRunRequest } from "./lib/runnerProtocol";
 import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
@@ -24,7 +25,7 @@ interface HealthStatus {
 
 const DEFAULT_FLAG_SETTINGS: FlagSettings = {
   enabled: true,
-  prefixes: "flag, CTF",
+  prefixes: DEFAULT_FLAG_PREFIXES,
   scanOutput: true,
   scanStructured: true,
   scanBase64: true,
@@ -51,7 +52,10 @@ function App() {
   const [healthError, setHealthError] = useState(false);
   const [selection, setSelection] = useState<ToolSelection>({ toolId: "sqlmap" });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [flagSettings, setFlagSettings] = useState(DEFAULT_FLAG_SETTINGS);
+  const [flagSettings, setFlagSettings] = useState<FlagSettings>(() => ({
+    ...DEFAULT_FLAG_SETTINGS,
+    prefixes: loadFlagPrefixes(),
+  }));
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [tasks, setTasks] = useState<Record<string, TaskState>>({
     "sqlmap:default": createTask("sqlmap"),
@@ -67,6 +71,10 @@ function App() {
     document.documentElement.dataset.theme = theme;
     saveTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    saveFlagPrefixes(flagSettings.prefixes);
+  }, [flagSettings.prefixes]);
 
   const key = selectionKey(selection);
   const task = tasks[key] ?? createTask(selection.toolId);

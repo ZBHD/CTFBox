@@ -110,7 +110,7 @@ CTFBox 0.1.2 的目标是覆盖常见和多数中等难度图片隐写题，并�
 本地验收安装包：
 
 ```text
-gui/src-tauri/target/release/bundle/nsis/CTFBox_0.1.2_x64-setup.exe
+setup/CTFBox-0.1.2-windows-x64-setup.exe
 ```
 
 | 属性 | 结果 |
@@ -148,7 +148,7 @@ gui/src-tauri/target/release/bundle/nsis/CTFBox_0.1.2_x64-setup.exe
 ## 七、升级说明
 
 1. 退出正在运行的旧版 CTFBox。
-2. 运行 `CTFBox_0.1.2_x64-setup.exe`。
+2. 运行 `CTFBox-0.1.2-windows-x64-setup.exe`。
 3. 按安装程序提示选择安装目录并完成安装。
 4. 启动后进入“设置 → 版本更新”，确认当前版本显示为 `v0.1.2`。
 5. 打开 Misc，可分别选择 LSB 隐写或图片/文件隐写工作台。

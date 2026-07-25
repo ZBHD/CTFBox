@@ -42,7 +42,7 @@
 Windows x64 安装包：
 
 ```text
-CTFBox_0.1.2_x64-setup.exe
+CTFBox-0.1.2-windows-x64-setup.exe
 ```
 
 SHA256：

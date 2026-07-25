@@ -1,10 +1,11 @@
-import { Play, RotateCcw, ScanSearch, Square } from "lucide-react";
+import { Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { DEFAULT_LSB_PARAMETERS } from "../../lib/lsbEngine";
 import { parsePaletteIndexes } from "../../lib/pngPalette";
 import type { LsbLocalAnalysis } from "../../lib/lsbTypes";
 import { LsbWorkerClient } from "../../lib/lsbWorkerClient";
 import { LsbParameterPanel } from "./lsb/LsbParameterPanel";
+import { LsbResultsPanel } from "./lsb/LsbResultsPanel";
 import { LsbSourcePanel } from "./lsb/LsbSourcePanel";
 
 interface LsbWorkbenchProps {
@@ -75,7 +76,11 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
     clientRef.current ??= new LsbWorkerClient();
     return clientRef.current;
   };
-  const update = (patch: Partial<LsbLocalAnalysis>) => onAnalysisChange({ ...analysisRef.current, ...patch });
+  const update = (patch: Partial<LsbLocalAnalysis>) => {
+    const next = { ...analysisRef.current, ...patch };
+    analysisRef.current = next;
+    onAnalysisChange(next);
+  };
 
   const loadFile = async (file: File) => {
     clientRef.current?.cancel();
@@ -120,13 +125,41 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
         });
         update({ status: "completed", candidates, selectedId: candidates[0]?.id, progress: undefined });
       } else {
-        const candidate = await getClient().manual(analysis.source, analysis.parameters);
+        const candidate = await getClient().manual(analysis.source, analysis.parameters, { prefixes: flagEnabled ? flagPrefixes : [], caseSensitive: flagCaseSensitive });
         update({ status: "completed", candidates: [candidate], selectedId: candidate.id, progress: undefined });
       }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") update({ status: "cancelled", progress: undefined });
       else update({ status: "failed", progress: undefined, error: error instanceof Error ? error.message : String(error) });
     }
+  };
+
+  const applyCandidate = async (candidate: LsbLocalAnalysis["candidates"][number]) => {
+    const source = analysisRef.current.source;
+    if (!source) return;
+    const parameters = {
+      ...candidate.parameters,
+      sources: candidate.parameters.sources.map((item) => ({ ...item })),
+      scan: { ...candidate.parameters.scan },
+    };
+    update({ mode: "manual", parameters, status: "running", selectedId: candidate.id, error: undefined, progress: undefined });
+    try {
+      const extracted = await getClient().manual(source, parameters, { prefixes: flagEnabled ? flagPrefixes : [], caseSensitive: flagCaseSensitive });
+      update({ status: "completed", candidates: [extracted], selectedId: extracted.id });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") update({ status: "cancelled" });
+      else update({ status: "failed", error: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  const exportBytes = (bytes: Uint8Array, fileName: string, mediaType: string) => {
+    const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: mediaType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   return <section className="local-workbench misc-workbench lsb-workbench">
@@ -148,7 +181,7 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
       </section>
       <section className="extraction-results">
         <header className="local-section-header"><div><strong>提取结果</strong><span>{analysis.progress ? `${analysis.progress.stage} · 已测试 ${analysis.progress.tested}` : analysis.candidates.length ? `${analysis.candidates.length} 个候选` : "运行后显示数据和文件"}</span></div></header>
-        <div className="extraction-empty"><ScanSearch size={24} /><span>{analysis.error ?? (analysis.source ? "参数已就绪" : "载入文件后开始分析")}</span><small>文本、文件签名、归档内容和 Flag 会集中显示在这里</small></div>
+        <LsbResultsPanel analysis={analysis} onSelect={(candidate) => update({ selectedId: candidate.id })} onApply={(candidate) => void applyCandidate(candidate)} onExport={exportBytes} />
       </section>
     </div>
   </section>;

@@ -26,7 +26,7 @@ scope.onmessage = (event) => {
   if (request.type === "manual") {
     try {
       const bytes = extractLsb(request.source, request.parameters);
-      const scored = scoreLsbPayload(bytes, [], false);
+      const scored = scoreLsbPayload(bytes, request.prefixes, request.caseSensitive);
       const candidate: LsbCandidate = {
         id: `manual-${request.jobId}`,
         score: scored.score,

@@ -7,7 +7,7 @@ import type {
 
 export type LsbWorkerRequest =
   | { type: "auto"; jobId: number; source: LsbImageSource; depth: "quick" | "deep"; prefixes: string[]; caseSensitive: boolean }
-  | { type: "manual"; jobId: number; source: LsbImageSource; parameters: LsbExtractionParameters }
+  | { type: "manual"; jobId: number; source: LsbImageSource; parameters: LsbExtractionParameters; prefixes: string[]; caseSensitive: boolean }
   | { type: "cancel"; jobId: number };
 
 export type LsbWorkerResponse =
@@ -137,9 +137,9 @@ export class LsbWorkerClient {
     );
   }
 
-  manual(source: LsbImageSource, parameters: LsbExtractionParameters) {
+  manual(source: LsbImageSource, parameters: LsbExtractionParameters, options: { prefixes?: readonly string[]; caseSensitive?: boolean } = {}) {
     return this.start<LsbCandidate>(
-      (jobId, cloned) => ({ type: "manual", jobId, source: cloned, parameters }),
+      (jobId, cloned) => ({ type: "manual", jobId, source: cloned, parameters, prefixes: [...(options.prefixes ?? [])], caseSensitive: options.caseSensitive ?? false }),
       source,
       (response) => response.type === "manual-complete" ? response.candidate : undefined,
     );

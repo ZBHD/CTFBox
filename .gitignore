@@ -1,6 +1,6 @@
 # Brainstorm visual sessions and local screenshots
 .superpowers/
-docs/superpowers/
+docs/
 
 # Python runtime artifacts
 __pycache__/

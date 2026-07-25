@@ -162,7 +162,7 @@ class InstallerConfigTests(unittest.TestCase):
         )
         self.assertLess(
             release_step.index('$assetName = "CTFBox-$version-windows-x64-setup.exe"'),
-            release_step.index('$checksum = (Get-FileHash -LiteralPath $asset.FullName'),
+            release_step.index('$signatureFile = "$($updater.FullName).sig"'),
         )
         self.assertRegex(
             release_step,
@@ -201,17 +201,18 @@ class InstallerConfigTests(unittest.TestCase):
         )
         expected_commands = {
             "upload": (
-                'gh release upload $tag $asset.FullName "SHA256SUMS.txt" '
-                '$updater.FullName $signatureAsset.FullName "latest.json" '
+                'gh release upload $tag $asset.FullName $updater.FullName '
+                '$signatureAsset.FullName "latest.json" '
                 '--repo $env:GITHUB_REPOSITORY --clobber'
             ),
             "create": (
-                'gh release create $tag $asset.FullName "SHA256SUMS.txt" '
-                '$updater.FullName $signatureAsset.FullName "latest.json" '
+                'gh release create $tag $asset.FullName $updater.FullName '
+                '$signatureAsset.FullName "latest.json" '
                 '--repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" '
                 '--generate-notes --verify-tag'
             ),
         }
+        self.assertNotIn("SHA256SUMS.txt", release_step)
         for command_name, expected_command in expected_commands.items():
             command_match = re.search(
                 rf"(?m)^\s{{10,}}gh release {command_name}\b[^\r\n]*$",

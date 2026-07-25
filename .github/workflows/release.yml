@@ -124,8 +124,6 @@ jobs:
           $asset = Get-Item -LiteralPath $assetPath
           $signatureFile = "$($updater.FullName).sig"
           $signatureAsset = Get-Item -LiteralPath $signatureFile
-          $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
-          "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $signature = (Get-Content -LiteralPath $signatureFile -Raw).Trim()
           $repositoryUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
@@ -154,14 +152,14 @@ jobs:
             if ($release.prerelease) {
               throw "草稿 Release 被标记为预发布版本，停止发布：$tag"
             }
-            gh release upload $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag $asset.FullName $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) { throw "覆盖草稿 Release 资产失败" }
           } else {
             $queryError = Get-Content -LiteralPath $releaseError -Raw
             if ($queryError -notmatch 'HTTP 404') {
               throw "查询 GitHub Release 失败，退出码：$queryExitCode"
             }
-          gh release create $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" --generate-notes --verify-tag
+          gh release create $tag $asset.FullName $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" --generate-notes --verify-tag
             if ($LASTEXITCODE -ne 0) { throw "创建草稿 Release 失败" }
           }
           gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest --title "CTFBox $tag"

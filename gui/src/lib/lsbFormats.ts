@@ -107,6 +107,32 @@ export function decodeTextPreview(bytes: Uint8Array, limit = 4096): { text: stri
   return { text, printableRatio: printable / Array.from(text).length };
 }
 
+function probableFlags(text: string) {
+  const pattern = /(?:^|[^A-Za-z0-9_-])([A-Za-z][A-Za-z0-9_-]{1,31}\{[^\x00-\x1f{}]{1,512}\})/g;
+  const hits: string[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const value = match[1];
+    if (value && !hits.includes(value)) hits.push(value);
+  }
+  return hits;
+}
+
+function printableStrings(bytes: Uint8Array, limit = 4096, minimumLength = 4) {
+  const strings: string[] = [];
+  let current = "";
+  const flush = () => {
+    const value = current.trim();
+    if (value.length >= minimumLength && !strings.includes(value)) strings.push(value);
+    current = "";
+  };
+  for (const byte of bytes.subarray(0, limit)) {
+    if (byte === 9 || (byte >= 32 && byte <= 126)) current += String.fromCharCode(byte);
+    else flush();
+  }
+  flush();
+  return strings.join("\n");
+}
+
 export function findEmbeddedFiles(bytes: Uint8Array): LsbExtractedFile[] {
   const files: LsbExtractedFile[] = [];
   for (const format of FORMATS) {
@@ -141,12 +167,17 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
   const evidence: string[] = [];
   const { text, printableRatio } = decodeTextPreview(bytes);
   const flags = detectFlags(text, prefixes, caseSensitive);
+  const likelyFlags = probableFlags(text).filter((value) => !flags.some((hit) => hit.text === value));
   const files = findEmbeddedFiles(bytes);
   let score = bytes.length === 0 ? -100 : 0;
 
   for (const hit of flags) {
     score += hit.source === "plain" ? 120 : 90;
     evidence.push(`发现 Flag：${hit.text}`);
+  }
+  for (const flag of likelyFlags) {
+    score += 110;
+    evidence.push(`疑似 Flag：${flag}`);
   }
 
   if (printableRatio >= 0.85 && text.length >= 4) {
@@ -171,6 +202,11 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
           score += 100;
           evidence.push(`归档内发现 Flag：${hit.text}`);
         }
+        for (const flag of probableFlags(child.text)) {
+          if (evidence.some((item) => item.endsWith(`Flag：${flag}`))) continue;
+          score += 95;
+          evidence.push(`归档内发现疑似 Flag：${flag}`);
+        }
       }
     }
   }
@@ -187,7 +223,8 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
   }
 
   const firstFile = files[0];
-  const mediaType = firstFile?.mediaType ?? (printableRatio >= 0.75 ? "text/plain" : "application/octet-stream");
-  const preview = flags.length > 0 || printableRatio >= 0.6 ? text : bytesToHexPreview(bytes);
+  const mediaType = firstFile?.mediaType ?? (flags.length > 0 || likelyFlags.length > 0 || printableRatio >= 0.75 ? "text/plain" : "application/octet-stream");
+  const stringPreview = printableStrings(bytes);
+  const preview = printableRatio >= 0.6 ? text : stringPreview || bytesToHexPreview(bytes);
   return { score, evidence, preview, mediaType, files };
 }

@@ -167,9 +167,19 @@ function mixedBitOrders() {
   return [2, 3].flatMap((length) => combinations(values, length).flatMap((bits) => [bits, [...bits].reverse()]));
 }
 
+function mixedChannelSequences() {
+  const sequences = orderedChannelSequences(3);
+  const preferred = ["RG", "RGB", "BGR", "ABG"];
+  return [...sequences].sort((left, right) => {
+    const leftRank = preferred.indexOf(left.join(""));
+    const rightRank = preferred.indexOf(right.join(""));
+    return (leftRank < 0 ? preferred.length : leftRank) - (rightRank < 0 ? preferred.length : rightRank);
+  });
+}
+
 function* mixedParameters(): Generator<LsbExtractionParameters> {
   const scans = scanProfiles();
-  for (const channels of orderedChannelSequences(3)) {
+  for (const channels of mixedChannelSequences()) {
     for (const bits of mixedBitOrders()) {
       const sources = channels.flatMap((channel) => bits.map((bit) => ({ channel, bit: bit as LsbSourceToken["bit"] })));
       for (const scan of scans) yield baseParameters(sources, scan);
@@ -239,7 +249,12 @@ function addProbe(pool: ProbeCandidate[], candidate: ProbeCandidate) {
 }
 
 function isDecisive(candidate: ProbeCandidate) {
-  return candidate.evidence.some((item) => item.startsWith("发现 Flag：") || item.startsWith("归档内发现 Flag："));
+  return candidate.evidence.some((item) =>
+    item.startsWith("发现 Flag：")
+    || item.startsWith("疑似 Flag：")
+    || item.startsWith("归档内发现 Flag：")
+    || item.startsWith("归档内发现疑似 Flag："),
+  );
 }
 
 async function yieldForCancellation(signal: AbortSignal) {
@@ -290,8 +305,8 @@ export async function autoSearchLsb(source: LsbImageSource, options: LsbSearchOp
     return undefined;
   };
 
-  let decisive = await runStage("presets", presetParameters(source));
-  if (!decisive && options.depth === "deep") decisive = await runStage("mixed", mixedParameters());
+  let decisive = options.depth === "deep" ? await runStage("mixed", mixedParameters()) : undefined;
+  if (!decisive) decisive = await runStage("presets", presetParameters(source));
   if (!decisive) decisive = await runStage("transforms", transformParameters([...pool].sort(compareCandidates)));
 
   const validationPool = decisive ? [decisive] : pool;

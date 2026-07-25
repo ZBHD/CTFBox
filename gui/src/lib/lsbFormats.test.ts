@@ -107,6 +107,17 @@ describe("LSB payload previews and scoring", () => {
     expect(flag.evidence).toContain("发现 Flag：ctfshow{found}");
   });
 
+  it("surfaces probable flags even when their prefix is not configured", () => {
+    const payload = concat(
+      encoder.encode("ctfshow{auto-prefix}"),
+      Uint8Array.from({ length: 256 }, (_, index) => (index * 73 + 19) & 255),
+    );
+    const scored = scoreLsbPayload(payload, ["flag", "CTF"], false);
+
+    expect(scored.evidence).toContain("疑似 Flag：ctfshow{auto-prefix}");
+    expect(scored.preview).toContain("ctfshow{auto-prefix}");
+  });
+
   it("rewards structurally complete embedded files", () => {
     const scored = scoreLsbPayload(concat(Uint8Array.of(1, 2), minimalPng()), ["ctfshow"], false);
     expect(scored.mediaType).toBe("image/png");

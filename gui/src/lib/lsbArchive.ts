@@ -29,6 +29,15 @@ function readU32Le(bytes: Uint8Array, offset: number) {
   return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
 }
 
+function decodeZipName(bytes: Uint8Array, utf8: boolean) {
+  if (utf8 || bytes.every((byte) => byte < 0x80)) return new TextDecoder("utf-8").decode(bytes);
+  try {
+    return new TextDecoder("gb18030", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
 function warning(message: string): LsbExtractedFile {
   return {
     name: "归档警告",
@@ -65,8 +74,10 @@ function inspectZip(bytes: Uint8Array): ZipEntryInfo[] {
     const commentLength = readU16Le(bytes, cursor + 32);
     const end = cursor + 46 + nameLength + extraLength + commentLength;
     if (end > bytes.length) throw new Error("ZIP 中央目录条目被截断");
+    const flags = readU16Le(bytes, cursor + 8);
+    const nameBytes = bytes.subarray(cursor + 46, cursor + 46 + nameLength);
     entries.push({
-      name: new TextDecoder("utf-8").decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength)),
+      name: decodeZipName(nameBytes, (flags & 0x0800) !== 0),
       compressedSize: readU32Le(bytes, cursor + 20),
       uncompressedSize: readU32Le(bytes, cursor + 24),
     });
@@ -126,7 +137,8 @@ function unpackZip(bytes: Uint8Array, limits: ArchiveLimits): LsbExtractedFile[]
   }
 
   const files: LsbExtractedFile[] = [];
-  for (const [name, content] of Object.entries(unpacked)) {
+  for (const [[fallbackName, content], entry] of Object.entries(unpacked).map((item, index) => [item, entries[index]] as const)) {
+    const name = entry?.name || fallbackName;
     if (unsafePath(name)) {
       files.push(warning(`已忽略不安全路径：${name}`));
       continue;

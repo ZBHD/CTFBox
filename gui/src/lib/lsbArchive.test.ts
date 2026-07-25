@@ -11,6 +11,16 @@ function limits(overrides: Partial<ArchiveLimits>): ArchiveLimits {
   return { ...DEFAULT_ARCHIVE_LIMITS, ...overrides };
 }
 
+function zipWithLegacyGbkName() {
+  const archive = zipSync({ name: strToU8("ctfshow{gbk-name}") });
+  const asciiName = strToU8("name");
+  const gbkName = Uint8Array.of(0xc6, 0xec, 0xd7, 0xd3);
+  for (let offset = 0; offset <= archive.length - asciiName.length; offset += 1) {
+    if (asciiName.every((byte, index) => archive[offset + index] === byte)) archive.set(gbkName, offset);
+  }
+  return archive;
+}
+
 describe("LSB archive extraction", () => {
   it("extracts UTF-8 ZIP names and readable text", () => {
     const archive = zipSync({ "旗子": strToU8("ctfshow{inside}") });
@@ -22,6 +32,12 @@ describe("LSB archive extraction", () => {
       mediaType: "text/plain",
       text: "ctfshow{inside}",
     });
+  });
+
+  it("decodes legacy GBK ZIP names from the central directory", () => {
+    const files = unpackArchive(zipWithLegacyGbkName(), "application/zip");
+
+    expect(files[0]).toMatchObject({ name: "旗子", text: "ctfshow{gbk-name}" });
   });
 
   it("extracts GZIP text", () => {

@@ -53,6 +53,12 @@ describe("LsbResultsPanel", () => {
     expect(html).toContain("ctfshow{inside}");
   });
 
+  it("uses the scored printable preview for the text pane", () => {
+    const renderer = create(<LsbResultsPanel analysis={analysis()} onSelect={() => undefined} onApply={() => undefined} onExport={() => undefined} />);
+
+    expect(renderer.root.findByProps({ className: "lsb-result-text" }).children.join("")).toContain("ctfshow{result}");
+  });
+
   it("switches previews and invokes apply/export commands", () => {
     const onApply = vi.fn();
     const onExport = vi.fn();

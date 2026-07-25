@@ -1,6 +1,6 @@
 import { Check, Download, FileArchive, FileText } from "lucide-react";
 import { useMemo, useState } from "react";
-import { bytesToHexPreview, decodeTextPreview } from "../../../lib/lsbFormats";
+import { bytesToHexPreview } from "../../../lib/lsbFormats";
 import type { LsbCandidate, LsbExtractedFile, LsbLocalAnalysis } from "../../../lib/lsbTypes";
 
 interface LsbResultsPanelProps {
@@ -59,7 +59,7 @@ export function LsbResultsPanel({ analysis, onSelect, onApply, onExport }: LsbRe
 
   const baseName = safeBaseName(analysis.fileName);
   const rank = analysis.candidates.indexOf(selected) + 1;
-  const text = decodeTextPreview(selected.bytes, 64 * 1024).text;
+  const text = selected.preview;
   const exportName = `${baseName}-rank${rank}.${extension(selected.mediaType)}`;
 
   return <div className="lsb-results-layout">

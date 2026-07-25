@@ -89,6 +89,26 @@ describe("LSB automatic analysis", () => {
     ]).sources);
   }, 20_000);
 
+  it("stops quick search on a probable flag with an unconfigured prefix", async () => {
+    const expected = "ctfshow{default-prefixes}";
+    const source = embed(strToU8(expected), parameters([
+      { channel: "R", bit: 0 },
+      { channel: "G", bit: 0 },
+      { channel: "B", bit: 0 },
+    ]));
+    const progress: number[] = [];
+    const candidates = await autoSearchLsb(source, {
+      depth: "quick",
+      prefixes: ["flag", "CTF"],
+      caseSensitive: false,
+      signal: new AbortController().signal,
+      onProgress: ({ tested }) => progress.push(tested),
+    });
+
+    expect(candidates[0].preview).toContain(expected);
+    expect(progress.at(-1)).toBeLessThan(128);
+  }, 20_000);
+
   it("finds column-major ABG text", async () => {
     const expected = "ctfshow{column-abg}";
     const extraction = parameters([
@@ -126,9 +146,22 @@ describe("LSB automatic analysis", () => {
       { channel: "G", bit: 1 },
     ]);
 
-    const candidates = await search(embed(strToU8(expected), extraction), "deep");
+    const stages: string[] = [];
+    const tested: number[] = [];
+    const candidates = await autoSearchLsb(embed(strToU8(expected), extraction), {
+      depth: "deep",
+      prefixes: ["ctfshow"],
+      caseSensitive: false,
+      signal: new AbortController().signal,
+      onProgress: ({ stage, tested: count }) => {
+        stages.push(stage);
+        tested.push(count);
+      },
+    });
     expect(candidates[0].preview).toContain(expected);
     expect(candidates[0].parameters.sources).toEqual(extraction.sources);
+    expect(stages[0]).toBe("mixed");
+    expect(tested.at(-1)).toBeLessThan(2_500);
   }, 30_000);
 
   it("reports monotonic progress and aborts cooperatively", async () => {

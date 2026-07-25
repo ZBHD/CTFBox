@@ -8,6 +8,7 @@ import {
   applyToolStreamEvent,
   updateTaskContainingRun,
   type CommandRun,
+  type TaskState,
   type ToolStreamEvent,
 } from "./taskStore";
 
@@ -38,6 +39,38 @@ describe("in-memory task state", () => {
     };
 
     expect(clearTask(populated)).toEqual(createTask("sqlmap"));
+  });
+
+  it("clears structured local analysis state", () => {
+    const populated: TaskState = {
+      ...createTask("misc"),
+      localAnalysis: {
+        kind: "lsb",
+        status: "completed",
+        mode: "auto",
+        depth: "quick",
+        parameters: {
+          sourceKind: "rgba",
+          sources: [{ channel: "R", bit: 0 }],
+          scan: {
+            major: "row",
+            x: "left-to-right",
+            y: "top-to-bottom",
+            serpentine: false,
+            reversePixels: false,
+          },
+          layout: "pixel-interleaved",
+          packing: "msb-first",
+          bitOffset: 0,
+          invertBits: false,
+          reverseBytes: false,
+          byteOffset: 0,
+        },
+        candidates: [],
+      },
+    };
+
+    expect(clearTask(populated)).toEqual(createTask("misc"));
   });
 
   it("finishes a process run and updates the task status", () => {

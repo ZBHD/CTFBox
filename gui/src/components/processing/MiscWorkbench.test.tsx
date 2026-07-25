@@ -16,9 +16,19 @@ describe("MiscWorkbench", () => {
 
   it("renders image-specific LSB controls", () => {
     const html = renderMode("lsb");
-    expect(html).toContain("位平面");
-    expect(html).toContain("颜色通道");
-    expect(html).toContain("提取顺序");
+    expect(html).toContain("自动分析");
+    expect(html).toContain("手动提取");
+    expect(html).toContain("数据源顺序");
+    expect(html).not.toContain("等待分析适配器返回结果");
+  });
+
+  it("renders the dedicated image and file steganography workbench", () => {
+    const html = renderMode("image");
+    expect(html).toContain("图片 / 文件隐写");
+    expect(html).toContain("文件结构");
+    expect(html).toContain("二维 FFT");
+    expect(html).toContain("雕刻文件");
+    expect(html).not.toContain("等待分析适配器返回结果");
   });
 
   it("renders audio analysis controls", () => {

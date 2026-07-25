@@ -20,6 +20,31 @@ def workflow_step(workflow: str, name: str) -> str:
 
 
 class InstallerConfigTests(unittest.TestCase):
+    def test_release_version_is_1_1_2_and_consistent(self):
+        expected = "1.1.2"
+        tauri_config = json.loads(
+            (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        package = json.loads(
+            (ROOT / "gui" / "package.json").read_text(encoding="utf-8")
+        )
+        cargo_manifest = (
+            ROOT / "gui" / "src-tauri" / "Cargo.toml"
+        ).read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        cargo_version = re.search(
+            r'(?m)^version = "(?P<version>\d+\.\d+\.\d+)"$',
+            cargo_manifest,
+        )
+        self.assertIsNotNone(cargo_version)
+        self.assertEqual(tauri_config["version"], expected)
+        self.assertEqual(package["version"], expected)
+        self.assertEqual(cargo_version.group("version"), expected)
+        self.assertIn(f"当前版本为 `{expected}`。", readme)
+
     def test_signed_latest_release_updater_is_configured(self):
         config = json.loads(
             (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(

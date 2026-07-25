@@ -1,3 +1,5 @@
+import type { LocalAnalysisState } from "../lib/lsbTypes";
+
 export type TaskStatus = "idle" | "running" | "stopped" | "completed" | "failed";
 
 export interface CommandRun {
@@ -30,6 +32,7 @@ export interface TaskState {
   findings: StructuredFinding[];
   suggestions: TaskSuggestion[];
   status: TaskStatus;
+  localAnalysis?: LocalAnalysisState;
 }
 
 export type ToolStreamEvent =

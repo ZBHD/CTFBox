@@ -18,8 +18,8 @@ def workflow_step(workflow: str, name: str) -> str:
 
 
 class InstallerConfigTests(unittest.TestCase):
-    def test_release_version_is_0_1_2_and_consistent(self):
-        expected = "0.1.2"
+    def test_release_version_is_0_1_3_and_consistent(self):
+        expected = "0.1.3"
         tauri_config = json.loads(
             (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
                 encoding="utf-8"
@@ -97,13 +97,13 @@ class InstallerConfigTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, workflow)
 
-    def test_nsis_supports_custom_directory_and_creates_desktop_shortcut(self):
+    def test_nsis_defaults_to_program_files_and_creates_desktop_shortcut(self):
         config_path = ROOT / "gui" / "src-tauri" / "tauri.conf.json"
         config = json.loads(config_path.read_text(encoding="utf-8"))
         self.assertEqual(config["bundle"]["targets"], ["nsis"])
 
         nsis = config["bundle"]["windows"]["nsis"]
-        self.assertEqual(nsis["installMode"], "currentUser")
+        self.assertEqual(nsis["installMode"], "perMachine")
         self.assertEqual(nsis["installerHooks"], "nsis/installer-hooks.nsh")
 
         hook_path = config_path.parent / nsis["installerHooks"]

@@ -1,5 +1,18 @@
-import { Flag, Moon, Settings2, Sun, SunMoon } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileText,
+  Flag,
+  Github,
+  Moon,
+  RefreshCw,
+  Settings2,
+  Sun,
+  SunMoon,
+} from "lucide-react";
 import { useState } from "react";
+import { formatUpdateError, type UpdateState } from "../lib/updateManager";
 import type { Theme } from "../lib/themePreference";
 
 export interface FlagSettings {
@@ -12,20 +25,275 @@ export interface FlagSettings {
   pauseOnMatch: boolean;
 }
 
-interface SettingsPanelProps {
+export type SettingsSection = "flags" | "appearance" | "updates";
+
+interface BaseSettingsPanelProps {
   value: FlagSettings;
   theme: Theme;
   onChange: (value: FlagSettings) => void;
   onThemeChange: (theme: Theme) => void;
 }
 
+interface LegacySettingsPanelProps extends BaseSettingsPanelProps {
+  section?: undefined;
+  onSectionChange?: undefined;
+  updateState?: undefined;
+  onCheckUpdate?: undefined;
+  onStartUpdate?: undefined;
+  onRestartUpdate?: undefined;
+  onOpenGitHub?: undefined;
+  onOpenReleaseNotes?: undefined;
+  restartBusy?: undefined;
+  restartError?: undefined;
+  restartActionLabel?: undefined;
+  linkError?: undefined;
+  currentVersion?: undefined;
+}
+
+interface ControlledSettingsPanelProps extends BaseSettingsPanelProps {
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
+  updateState: UpdateState;
+  onCheckUpdate: () => void;
+  onStartUpdate: () => void;
+  onRestartUpdate: () => void;
+  onOpenGitHub: () => void;
+  onOpenReleaseNotes: () => void;
+  restartBusy: boolean;
+  restartError: string | undefined;
+  restartActionLabel: string;
+  linkError: string | undefined;
+  currentVersion?: string;
+}
+
+type SettingsPanelProps = LegacySettingsPanelProps | ControlledSettingsPanelProps;
+
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
   return <button className={`toggle ${checked ? "toggle-on" : ""}`} type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}><span /></button>;
 }
 
-export function SettingsPanel({ value, theme, onChange, onThemeChange }: SettingsPanelProps) {
-  const [section, setSection] = useState<"flags" | "appearance">("flags");
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const unitIndex = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const scaled = value / (1024 ** unitIndex);
+  const precision = Number.isInteger(scaled) || scaled >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${scaled.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function VersionValue({ label, version, accent = false }: { label: string; version?: string; accent?: boolean }) {
+  return (
+    <div className={`update-version-item ${accent ? "update-version-item-accent" : ""}`}>
+      <span>{label}</span>
+      <strong>{version ? `v${version}` : "--"}</strong>
+    </div>
+  );
+}
+
+function UpdateStatus({
+  state,
+  onCheckUpdate,
+  onStartUpdate,
+  onRestartUpdate,
+  restartBusy,
+  restartError,
+  restartActionLabel,
+}: {
+  state: UpdateState;
+  onCheckUpdate: () => void;
+  onStartUpdate: () => void;
+  onRestartUpdate: () => void;
+  restartBusy: boolean;
+  restartError: string | undefined;
+  restartActionLabel: string;
+}) {
+  const isChecking = state.phase === "checking";
+
+  if (state.phase === "available") {
+    return (
+      <div className="update-status update-status-available">
+        <div role="status"><Download size={18} /><span><strong>发现新版本</strong><small>安装包将在应用内下载并校验</small></span></div>
+        <button className="update-primary-action" type="button" onClick={onStartUpdate}>
+          更新到 v{state.latestVersion ?? "--"}
+        </button>
+      </div>
+    );
+  }
+
+  if (state.phase === "downloading") {
+    const hasTotal = typeof state.totalBytes === "number" && state.totalBytes > 0;
+    const percentage = hasTotal
+      ? Math.min(100, Math.max(0, Math.round((state.downloadedBytes / state.totalBytes!) * 100)))
+      : undefined;
+    const byteLabel = hasTotal
+      ? `${formatBytes(state.downloadedBytes)} / ${formatBytes(state.totalBytes!)}`
+      : `${formatBytes(state.downloadedBytes)} 已下载`;
+
+    return (
+      <div className="update-status update-status-progress">
+        <div className="update-progress-heading">
+          <strong>正在下载更新</strong>
+          <span>{percentage === undefined ? "计算进度中" : `${percentage}%`}</span>
+        </div>
+        <div
+          className={`update-progress-track ${percentage === undefined ? "update-progress-indeterminate" : ""}`}
+          role="progressbar"
+          aria-label="更新下载进度"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percentage}
+          aria-valuetext={percentage === undefined ? byteLabel : undefined}
+        >
+          <span style={{ width: `${percentage ?? 24}%` }} />
+        </div>
+        <span className="update-progress-bytes">{byteLabel}</span>
+      </div>
+    );
+  }
+
+  if (state.phase === "ready") {
+    return (
+      <>
+        <div className="update-status update-status-ready">
+          <div role="status">
+            <CheckCircle2 size={18} />
+            <span><strong>更新已准备好</strong><small>安装包已下载并通过校验，可随时重启应用</small></span>
+          </div>
+          <button
+            className="update-primary-action"
+            type="button"
+            disabled={restartBusy}
+            onClick={onRestartUpdate}
+          >
+            {restartActionLabel}
+          </button>
+        </div>
+        {restartError && <div className="update-inline-error" role="alert">{restartError}</div>}
+      </>
+    );
+  }
+
+  if (state.phase === "error") {
+    const isDownloadError = state.latestVersion !== undefined;
+    return (
+      <div className="update-status update-status-error" role="alert">
+        <div><AlertTriangle size={18} /><span><strong>{isDownloadError ? "下载更新失败" : "检查更新失败"}</strong><small>{formatUpdateError(state.error)}</small></span></div>
+        <button className="update-secondary-action" type="button" onClick={isDownloadError ? onStartUpdate : onCheckUpdate}>
+          {isDownloadError ? "重新下载" : "重新检查"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="update-status update-status-quiet" role="status">
+      <span>
+        <strong>{isChecking ? "正在检查更新" : state.phase === "latest" ? "当前已是最新版本" : "按需检查新版本"}</strong>
+        <small>{isChecking ? "正在连接 GitHub Release" : state.phase === "latest" ? "CTFBox 已运行最新稳定版本" : "仅获取最新稳定版，不包含预发布版本"}</small>
+      </span>
+      <button className="update-secondary-action" type="button" disabled={isChecking} onClick={onCheckUpdate}>
+        <RefreshCw size={15} />{isChecking ? "正在检查" : "手动检查"}
+      </button>
+    </div>
+  );
+}
+
+function UpdateSettings({
+  state,
+  currentVersion,
+  onCheckUpdate,
+  onStartUpdate,
+  onRestartUpdate,
+  onOpenGitHub,
+  onOpenReleaseNotes,
+  restartBusy,
+  restartError,
+  restartActionLabel,
+  linkError,
+}: {
+  state: UpdateState;
+  currentVersion?: string;
+  onCheckUpdate: () => void;
+  onStartUpdate: () => void;
+  onRestartUpdate: () => void;
+  onOpenGitHub: () => void;
+  onOpenReleaseNotes: () => void;
+  restartBusy: boolean;
+  restartError: string | undefined;
+  restartActionLabel: string;
+  linkError: string | undefined;
+}) {
+  const installedVersion = state.currentVersion ?? currentVersion;
+  const latestVersion = state.latestVersion ?? (state.phase === "latest" ? installedVersion : undefined);
+
+  return (
+    <section className="settings-section settings-updates" aria-labelledby="settings-updates-title" hidden={false}>
+      <div className="settings-section-title update-section-title">
+        <div>
+          <h2 id="settings-updates-title">版本更新</h2>
+          <p>检查并安装 CTFBox 的最新稳定版本</p>
+        </div>
+        <span className="update-channel">STABLE</span>
+      </div>
+
+      <div className="update-product">
+        <div className="update-product-mark" aria-hidden="true">C</div>
+        <div className="update-product-copy">
+          <strong>CTFBox</strong>
+          <span>一体化 CTF 工具箱</span>
+        </div>
+        <div className="update-version-grid">
+          <VersionValue label="当前版本" version={installedVersion} />
+          <VersionValue label="最新版本" version={latestVersion} accent={state.phase === "available"} />
+        </div>
+      </div>
+
+      {state.date && (
+        <div className="update-release-meta">
+          <span>发布日期</span>
+          <strong>{state.date}</strong>
+        </div>
+      )}
+
+      {state.notes && (
+        <div className="update-notes">
+          <strong>本次更新</strong>
+          <p>{state.notes}</p>
+        </div>
+      )}
+
+      <UpdateStatus
+        state={state}
+        onCheckUpdate={onCheckUpdate}
+        onStartUpdate={onStartUpdate}
+        onRestartUpdate={onRestartUpdate}
+        restartBusy={restartBusy}
+        restartError={restartError}
+        restartActionLabel={restartActionLabel}
+      />
+
+      <div className="update-links" aria-label="版本相关链接">
+        <div className="update-link-actions">
+          <button type="button" onClick={onOpenGitHub}><Github size={15} />GitHub</button>
+          <button type="button" onClick={onOpenReleaseNotes}><FileText size={15} />更新日志</button>
+        </div>
+        {linkError && <div className="update-inline-error" role="alert">{linkError}</div>}
+      </div>
+    </section>
+  );
+}
+
+export function SettingsPanel(props: SettingsPanelProps) {
+  const { value, theme, onChange, onThemeChange } = props;
+  const [localSection, setLocalSection] = useState<"flags" | "appearance">("flags");
+  const isControlled = props.section !== undefined;
+  const section: SettingsSection = isControlled ? props.section : localSection;
+  const selectSection = (nextSection: SettingsSection) => {
+    if (isControlled) props.onSectionChange(nextSection);
+    else if (nextSection !== "updates") setLocalSection(nextSection);
+  };
   const update = <K extends keyof FlagSettings>(key: K, next: FlagSettings[K]) => onChange({ ...value, [key]: next });
+
   return (
     <main className="settings-page">
       <header className="settings-header">
@@ -33,8 +301,11 @@ export function SettingsPanel({ value, theme, onChange, onThemeChange }: Setting
       </header>
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="设置分类">
-          <button className={section === "flags" ? "active" : ""} type="button" onClick={() => setSection("flags")}><Flag size={15} />Flag 识别</button>
-          <button className={section === "appearance" ? "active" : ""} type="button" onClick={() => setSection("appearance")}><SunMoon size={15} />外观</button>
+          <button className={section === "flags" ? "active" : ""} type="button" aria-current={section === "flags" ? "page" : undefined} onClick={() => selectSection("flags")}><Flag size={15} />Flag 识别</button>
+          <button className={section === "appearance" ? "active" : ""} type="button" aria-current={section === "appearance" ? "page" : undefined} onClick={() => selectSection("appearance")}><SunMoon size={15} />外观</button>
+          {isControlled && (
+            <button className={section === "updates" ? "active" : ""} type="button" aria-current={section === "updates" ? "page" : undefined} onClick={() => selectSection("updates")}><RefreshCw size={15} />版本更新</button>
+          )}
           <button type="button" disabled><Settings2 size={15} />运行环境</button>
         </nav>
 
@@ -63,6 +334,22 @@ export function SettingsPanel({ value, theme, onChange, onThemeChange }: Setting
           </div>
           <div className="settings-row"><div><strong>记住主题</strong><span>主题选择保存在本机，下次启动自动沿用</span></div><span className="settings-value">已启用</span></div>
         </section>
+
+        {isControlled && section === "updates" && (
+          <UpdateSettings
+            state={props.updateState}
+            currentVersion={props.currentVersion}
+            onCheckUpdate={props.onCheckUpdate}
+            onStartUpdate={props.onStartUpdate}
+            onRestartUpdate={props.onRestartUpdate}
+            onOpenGitHub={props.onOpenGitHub}
+            onOpenReleaseNotes={props.onOpenReleaseNotes}
+            restartBusy={props.restartBusy}
+            restartError={props.restartError}
+            restartActionLabel={props.restartActionLabel}
+            linkError={props.linkError}
+          />
+        )}
       </div>
     </main>
   );

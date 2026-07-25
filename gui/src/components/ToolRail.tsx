@@ -2,6 +2,7 @@ import {
   Binary,
   Box,
   ChevronDown,
+  CircleArrowUp,
   Code2,
   Database,
   FileSearch,
@@ -14,12 +15,17 @@ export interface ToolSelection {
   mode?: string;
 }
 
-interface ToolRailProps {
+interface ToolRailBaseProps {
   selection: ToolSelection;
   settingsOpen: boolean;
   onSelect: (selection: ToolSelection) => void;
   onOpenSettings: () => void;
 }
+
+type ToolRailProps = ToolRailBaseProps & (
+  | { availableUpdateVersion: string; onOpenUpdate: () => void }
+  | { availableUpdateVersion?: undefined; onOpenUpdate?: () => void }
+);
 
 const CRYPTO_TOOLS = [
   { id: "encoding", name: "编码转换", detail: "Base 系列与常用编码" },
@@ -34,8 +40,16 @@ const MISC_TOOLS = [
   { id: "audio", name: "音频隐写", detail: "频谱与波形数据分析" },
 ];
 
-export function ToolRail({ selection, settingsOpen, onSelect, onOpenSettings }: ToolRailProps) {
+export function ToolRail({
+  selection,
+  settingsOpen,
+  availableUpdateVersion,
+  onSelect,
+  onOpenSettings,
+  onOpenUpdate,
+}: ToolRailProps) {
   const [openMenu, setOpenMenu] = useState<"crypto" | "misc" | null>(null);
+  const hasAvailableUpdate = availableUpdateVersion !== undefined;
 
   const renderPicker = (
     id: "crypto" | "misc",
@@ -92,9 +106,20 @@ export function ToolRail({ selection, settingsOpen, onSelect, onOpenSettings }: 
 
   return (
     <aside className="tool-rail">
-      <div className="brand">
+      <div className={`brand ${hasAvailableUpdate ? "brand-update-available" : ""}`}>
         <span className="brand-mark"><Box size={17} /></span>
-        <span><strong>CTFBox</strong><small>桌面工具台</small></span>
+        <span className="brand-copy"><strong>CTFBox</strong><small>桌面工具台</small></span>
+        {hasAvailableUpdate && (
+          <button
+            className="brand-update"
+            type="button"
+            title={`发现新版本 v${availableUpdateVersion}`}
+            aria-label={`发现新版本 v${availableUpdateVersion}`}
+            onClick={onOpenUpdate}
+          >
+            <CircleArrowUp aria-hidden="true" size={16} />
+          </button>
+        )}
       </div>
       <nav aria-label="工具导航">
         <span className="nav-label">WEB 工具</span>

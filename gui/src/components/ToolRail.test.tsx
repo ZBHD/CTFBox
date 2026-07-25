@@ -1,0 +1,67 @@
+import { act, create } from "react-test-renderer";
+import { describe, expect, it, vi } from "vitest";
+import { ToolRail } from "./ToolRail";
+
+const baseProps = {
+  selection: { toolId: "sqlmap" },
+  settingsOpen: false,
+  onSelect: () => undefined,
+  onOpenSettings: () => undefined,
+};
+
+function assertUpdateCallbackContract() {
+  // @ts-expect-error An available update must always provide a working callback.
+  return <ToolRail {...baseProps} availableUpdateVersion="0.2.0" />;
+}
+
+void assertUpdateCallbackContract;
+
+describe("ToolRail", () => {
+  it("opens the available update from the brand area", () => {
+    const onOpenUpdate = vi.fn();
+    const rail = create(
+      <ToolRail
+        {...baseProps}
+        availableUpdateVersion="0.2.0"
+        onOpenUpdate={onOpenUpdate}
+      />,
+    );
+    const updateButton = rail.root.findByProps({
+      "aria-label": "发现新版本 v0.2.0",
+      title: "发现新版本 v0.2.0",
+    });
+
+    act(() => updateButton.props.onClick());
+
+    expect(onOpenUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("hides the update button when no update is available", () => {
+    const rail = create(<ToolRail {...baseProps} />);
+
+    expect(
+      rail.root.findAll((node) =>
+        String(node.props["aria-label"] ?? "").startsWith("发现新版本 v"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("treats an empty version string as a provided update", () => {
+    const onOpenUpdate = vi.fn();
+    const rail = create(
+      <ToolRail
+        {...baseProps}
+        availableUpdateVersion=""
+        onOpenUpdate={onOpenUpdate}
+      />,
+    );
+    const updateButton = rail.root.findByProps({
+      "aria-label": "发现新版本 v",
+      title: "发现新版本 v",
+    });
+
+    act(() => updateButton.props.onClick());
+
+    expect(onOpenUpdate).toHaveBeenCalledOnce();
+  });
+});

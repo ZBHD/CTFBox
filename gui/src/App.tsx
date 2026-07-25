@@ -1,8 +1,11 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useState } from "react";
-import { SettingsPanel, type FlagSettings } from "./components/SettingsPanel";
+import { openUrl as tauriOpenUrl } from "@tauri-apps/plugin-opener";
+import { relaunch as tauriRelaunch } from "@tauri-apps/plugin-process";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SettingsPanel, type FlagSettings, type SettingsSection } from "./components/SettingsPanel";
 import { FlagHitStrip } from "./components/FlagHitStrip";
 import { ToolRail, type ToolSelection } from "./components/ToolRail";
+import { UpdateReadyDialog } from "./components/UpdateReadyDialog";
 import { CryptoWorkbench } from "./components/processing/CryptoWorkbench";
 import { MiscWorkbench } from "./components/processing/MiscWorkbench";
 import { CommandTerminal } from "./components/workbench/CommandTerminal";
@@ -15,6 +18,18 @@ import { DEFAULT_FLAG_PREFIXES, loadFlagPrefixes, saveFlagPrefixes } from "./lib
 import { getPlugin } from "./lib/pluginRegistry";
 import { createToolRunRequest } from "./lib/runnerProtocol";
 import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
+import {
+  checkLatest,
+  downloadUpdate,
+  formatUpdateError,
+  installAndRelaunch,
+  UpdateRelaunchError,
+  type CheckLatestOptions,
+  type InstallOptions,
+  type UpdateHandle,
+  type UpdateResult,
+  type UpdateState,
+} from "./lib/updateManager";
 import { applyToolStreamEvent, appendOutput, appendRun, clearTask, createTask, finishRun, updateTaskContainingRun, type TaskState, type ToolStreamEvent } from "./state/taskStore";
 
 interface HealthStatus {
@@ -33,6 +48,34 @@ const DEFAULT_FLAG_SETTINGS: FlagSettings = {
   pauseOnMatch: false,
 };
 
+const IDLE_UPDATE_STATE: UpdateState = {
+  phase: "idle",
+  downloadedBytes: 0,
+};
+
+const GITHUB_URL = "https://github.com/ZBHD/CTFBox";
+const RELEASE_NOTES_URL = `${GITHUB_URL}/releases/latest`;
+
+export interface AppUpdateAdapter {
+  checkLatest(options?: CheckLatestOptions): Promise<UpdateResult>;
+  downloadUpdate(
+    update: UpdateHandle,
+    previousState: UpdateState,
+    onState?: (state: UpdateState) => void,
+  ): Promise<UpdateResult>;
+  installAndRelaunch(update: UpdateHandle, options?: InstallOptions): Promise<void>;
+  relaunch(): Promise<void>;
+  openUrl(url: string): Promise<void>;
+}
+
+const DEFAULT_UPDATE_ADAPTER: AppUpdateAdapter = {
+  checkLatest,
+  downloadUpdate,
+  installAndRelaunch,
+  relaunch: tauriRelaunch,
+  openUrl: tauriOpenUrl,
+};
+
 const MODE_NAMES: Record<string, string> = {
   encoding: "编码转换",
   hash: "哈希识别",
@@ -47,11 +90,22 @@ function selectionKey(selection: ToolSelection) {
   return `${selection.toolId}:${selection.mode ?? "default"}`;
 }
 
-function App() {
+interface AppProps {
+  updateAdapter?: AppUpdateAdapter;
+}
+
+function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState(false);
   const [selection, setSelection] = useState<ToolSelection>({ toolId: "sqlmap" });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("flags");
+  const [updateState, setUpdateState] = useState<UpdateState>(IDLE_UPDATE_STATE);
+  const [updateHandle, setUpdateHandle] = useState<UpdateHandle | null>(null);
+  const [restartDialogPostponed, setRestartDialogPostponed] = useState(false);
+  const [restartBusy, setRestartBusy] = useState(false);
+  const [restartError, setRestartError] = useState<string>();
+  const [linkError, setLinkError] = useState<string>();
   const [flagSettings, setFlagSettings] = useState<FlagSettings>(() => ({
     ...DEFAULT_FLAG_SETTINGS,
     prefixes: loadFlagPrefixes(),
@@ -60,6 +114,98 @@ function App() {
   const [tasks, setTasks] = useState<Record<string, TaskState>>({
     "sqlmap:default": createTask("sqlmap"),
   });
+  const mountedRef = useRef(false);
+  const updateStateRef = useRef(updateState);
+  const updateHandleRef = useRef<UpdateHandle | null>(null);
+  const checkControllerRef = useRef<AbortController | null>(null);
+  const checkSequenceRef = useRef(0);
+  const downloadBusyRef = useRef(false);
+  const restartBusyRef = useRef(false);
+  const installedRef = useRef(false);
+  const linkSequenceRef = useRef(0);
+
+  const commitUpdateState = useCallback((state: UpdateState) => {
+    updateStateRef.current = state;
+    setUpdateState(state);
+  }, []);
+
+  const closeUpdateHandle = useCallback((handle: UpdateHandle | null) => {
+    if (!handle) return;
+    void Promise.resolve().then(() => handle.close()).catch(() => undefined);
+  }, []);
+
+  const adoptUpdateHandle = useCallback((nextHandle: UpdateHandle | null) => {
+    const previousHandle = updateHandleRef.current;
+    if (previousHandle === nextHandle) return;
+    updateHandleRef.current = nextHandle;
+    setUpdateHandle(nextHandle);
+    closeUpdateHandle(previousHandle);
+  }, [closeUpdateHandle]);
+
+  const runUpdateCheck = useCallback(async (silent: boolean) => {
+    if (!silent && ["downloading", "ready"].includes(updateStateRef.current.phase)) return;
+
+    checkControllerRef.current?.abort();
+    const controller = new AbortController();
+    const sequence = ++checkSequenceRef.current;
+    checkControllerRef.current = controller;
+
+    if (!silent) {
+      commitUpdateState({ ...IDLE_UPDATE_STATE, phase: "checking" });
+    }
+
+    const isCurrent = () => (
+      mountedRef.current
+      && !controller.signal.aborted
+      && checkSequenceRef.current === sequence
+    );
+
+    try {
+      const result = await updateAdapter.checkLatest({
+        silent,
+        signal: controller.signal,
+        onState: (state) => {
+          if (isCurrent()) commitUpdateState(state);
+        },
+      });
+
+      if (!isCurrent()) {
+        if (result.update && result.update !== updateHandleRef.current) closeUpdateHandle(result.update);
+        return;
+      }
+
+      commitUpdateState(result.state);
+      adoptUpdateHandle(result.update ?? null);
+      if (result.update) {
+        installedRef.current = false;
+        setRestartError(undefined);
+        setRestartDialogPostponed(false);
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (!silent) adoptUpdateHandle(null);
+      commitUpdateState(silent
+        ? { ...IDLE_UPDATE_STATE }
+        : { ...IDLE_UPDATE_STATE, phase: "error", error: formatUpdateError(error) });
+    } finally {
+      if (checkControllerRef.current === controller) checkControllerRef.current = null;
+    }
+  }, [adoptUpdateHandle, closeUpdateHandle, commitUpdateState, updateAdapter]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void runUpdateCheck(true);
+
+    return () => {
+      mountedRef.current = false;
+      checkSequenceRef.current += 1;
+      checkControllerRef.current?.abort();
+      checkControllerRef.current = null;
+      const ownedHandle = updateHandleRef.current;
+      updateHandleRef.current = null;
+      closeUpdateHandle(ownedHandle);
+    };
+  }, [closeUpdateHandle, runUpdateCheck]);
 
   useEffect(() => {
     void invoke<HealthStatus>("app_health")
@@ -75,6 +221,79 @@ function App() {
   useEffect(() => {
     saveFlagPrefixes(flagSettings.prefixes);
   }, [flagSettings.prefixes]);
+
+  const startUpdateDownload = () => {
+    const ownedHandle = updateHandleRef.current;
+    if (!ownedHandle || downloadBusyRef.current || updateStateRef.current.phase === "downloading") return;
+    downloadBusyRef.current = true;
+    setRestartError(undefined);
+    setRestartDialogPostponed(false);
+
+    void Promise.resolve().then(() => updateAdapter.downloadUpdate(ownedHandle, updateStateRef.current, (state) => {
+      if (!mountedRef.current || updateHandleRef.current !== ownedHandle) return;
+      commitUpdateState(state);
+      if (state.phase === "ready") setRestartDialogPostponed(false);
+    })).then((result) => {
+      if (!mountedRef.current || updateHandleRef.current !== ownedHandle) {
+        if (result.update && result.update !== ownedHandle) closeUpdateHandle(result.update);
+        return;
+      }
+      commitUpdateState(result.state);
+      if (result.update !== ownedHandle) adoptUpdateHandle(result.update ?? null);
+      if (result.state.phase === "ready") setRestartDialogPostponed(false);
+    }).catch((error) => {
+      if (!mountedRef.current || updateHandleRef.current !== ownedHandle) return;
+      commitUpdateState({
+        ...updateStateRef.current,
+        phase: "error",
+        error: formatUpdateError(error),
+      });
+    }).finally(() => {
+      downloadBusyRef.current = false;
+    });
+  };
+
+  const restartIntoUpdate = () => {
+    const ownedHandle = updateHandleRef.current;
+    if (!ownedHandle || restartBusyRef.current) return;
+    restartBusyRef.current = true;
+    setRestartBusy(true);
+    setRestartError(undefined);
+
+    const relaunchOnly = installedRef.current;
+    const restart = Promise.resolve().then(() => relaunchOnly
+      ? updateAdapter.relaunch()
+      : updateAdapter.installAndRelaunch(ownedHandle, { relaunch: updateAdapter.relaunch }));
+
+    void restart.then(() => {
+      installedRef.current = true;
+      if (mountedRef.current && updateHandleRef.current === ownedHandle) {
+        setRestartError("更新已安装，但应用仍在运行，请再次重启");
+      }
+    }).catch((error) => {
+      if (!mountedRef.current || updateHandleRef.current !== ownedHandle) return;
+      if (error instanceof UpdateRelaunchError || installedRef.current) {
+        installedRef.current = true;
+        setRestartError(`重启应用失败：${formatUpdateError(error)}`);
+        return;
+      }
+      setRestartError(`安装更新失败：${formatUpdateError(error)}`);
+    }).finally(() => {
+      restartBusyRef.current = false;
+      if (mountedRef.current) setRestartBusy(false);
+    });
+  };
+
+  const openExternalUrl = (url: string) => {
+    const sequence = ++linkSequenceRef.current;
+    setLinkError(undefined);
+    void Promise.resolve().then(() => updateAdapter.openUrl(url)).then(() => {
+      if (mountedRef.current && linkSequenceRef.current === sequence) setLinkError(undefined);
+    }).catch((error) => {
+      if (!mountedRef.current || linkSequenceRef.current !== sequence) return;
+      setLinkError(`打开链接失败：${formatUpdateError(error)}`);
+    });
+  };
 
   const key = selectionKey(selection);
   const task = tasks[key] ?? createTask(selection.toolId);
@@ -191,12 +410,52 @@ function App() {
   const flagHits = flagSettings.enabled
     ? detectFlags(flagScanText, prefixes, flagSettings.caseSensitive).filter((hit) => flagSettings.scanBase64 || hit.source !== "base64")
     : [];
+  const railProps = {
+    selection,
+    settingsOpen,
+    onSelect: selectTool,
+    onOpenSettings: () => setSettingsOpen(true),
+  };
+  const availableUpdateVersion = updateHandle && updateState.latestVersion
+    && ["available", "downloading", "ready", "error"].includes(updateState.phase)
+    ? updateState.latestVersion
+    : undefined;
+  const restartDialogOpen = updateHandle !== null
+    && updateState.phase === "ready"
+    && !restartDialogPostponed;
 
   return (
     <div className="app-shell">
-      <ToolRail selection={selection} settingsOpen={settingsOpen} onSelect={selectTool} onOpenSettings={() => setSettingsOpen(true)} />
+      {availableUpdateVersion !== undefined ? (
+        <ToolRail
+          {...railProps}
+          availableUpdateVersion={availableUpdateVersion}
+          onOpenUpdate={() => {
+            setSettingsSection("updates");
+            setSettingsOpen(true);
+          }}
+        />
+      ) : <ToolRail {...railProps} />}
       {settingsOpen ? (
-        <SettingsPanel value={flagSettings} theme={theme} onChange={setFlagSettings} onThemeChange={setTheme} />
+        <SettingsPanel
+          value={flagSettings}
+          theme={theme}
+          onChange={setFlagSettings}
+          onThemeChange={setTheme}
+          currentVersion={health?.version}
+          section={settingsSection}
+          onSectionChange={setSettingsSection}
+          updateState={updateState}
+          onCheckUpdate={() => { void runUpdateCheck(false); }}
+          onStartUpdate={startUpdateDownload}
+          onRestartUpdate={restartIntoUpdate}
+          onOpenGitHub={() => openExternalUrl(GITHUB_URL)}
+          onOpenReleaseNotes={() => openExternalUrl(RELEASE_NOTES_URL)}
+          restartBusy={restartBusy}
+          restartError={restartDialogOpen ? undefined : restartError}
+          restartActionLabel={installedRef.current ? "再次重启" : restartError ? "重试安装" : "立即重启"}
+          linkError={linkError}
+        />
       ) : (
         <main className="main-content">
           <ModeControls
@@ -227,6 +486,16 @@ function App() {
             <span>{task.runs.length} 次运行</span>
           </footer>
         </main>
+      )}
+      {restartDialogOpen && updateHandle && (
+        <UpdateReadyDialog
+          version={updateState.latestVersion ?? updateHandle.version}
+          busy={restartBusy}
+          error={restartError}
+          actionLabel={installedRef.current ? "再次重启" : restartError ? "重试安装" : "立即重启"}
+          onPostpone={() => setRestartDialogPostponed(true)}
+          onRestart={restartIntoUpdate}
+        />
       )}
     </div>
   );

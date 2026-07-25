@@ -18,6 +18,7 @@ import { DEFAULT_FLAG_PREFIXES, loadFlagPrefixes, saveFlagPrefixes } from "./lib
 import type { LocalAnalysisState } from "./lib/lsbTypes";
 import { getPlugin } from "./lib/pluginRegistry";
 import { createToolRunRequest } from "./lib/runnerProtocol";
+import { applySuggestionPatch, buildTaskSuggestions, type TaskSuggestion } from "./lib/suggestionEngine";
 import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
 import {
   checkLatest,
@@ -304,6 +305,17 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     () => isWebTool ? buildCommand(selection.toolId, task.edition, task.parameters as ToolParameters) : [],
     [isWebTool, selection.toolId, task.edition, task.parameters],
   );
+  const suggestions = useMemo(() => buildTaskSuggestions(
+    selection.toolId,
+    task.parameters as ToolParameters,
+    task.findings,
+  ).map((suggestion) => {
+    const snapshot = applySuggestionPatch(selection.toolId, task.parameters as ToolParameters, suggestion.patch);
+    return {
+      ...suggestion,
+      commandPreview: buildCommand(selection.toolId, task.edition, snapshot).join(" "),
+    };
+  }), [selection.toolId, task.edition, task.findings, task.parameters]);
   const canRun = isWebTool && command.length > 1;
 
   const updateCurrentTask = (updater: (current: TaskState) => TaskState) => {
@@ -328,32 +340,24 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     updateCurrentTask((current) => ({ ...current, localAnalysis: analysis }));
   };
 
-  const runCommand = () => {
-    if (task.status === "running") {
-      const activeRun = task.runs.find((run) => run.status === "running");
-      if (activeRun) {
-        void invoke("stop_tool", { runId: activeRun.id }).catch((error) => {
-          setTasks((current) => updateTaskContainingRun(current, activeRun.id, (owner) =>
-            appendOutput(owner, activeRun.id, `\n停止失败：${error instanceof Error ? error.message : String(error)}\n`),
-          ));
-        });
-      }
-      return;
-    }
+  const runWithParameters = (parameters: ToolParameters) => {
+    if (task.status === "running") return;
+    const nextCommand = buildCommand(selection.toolId, task.edition, parameters);
+    if (nextCommand.length <= 1) return;
     const id = `run-${crypto.randomUUID()}`;
     let request;
     try {
-      request = createToolRunRequest(id, selection.toolId as "sqlmap" | "sstimap", task.edition, command);
+      request = createToolRunRequest(id, selection.toolId as "sqlmap" | "sstimap", task.edition, nextCommand);
     } catch (error) {
-      updateCurrentTask((current) => ({ ...current, status: "failed", runs: [...current.runs, { id, argv: command, status: "failed", output: error instanceof Error ? error.message : "命令无效", collapsed: false }] }));
+      updateCurrentTask((current) => ({ ...current, status: "failed", runs: [...current.runs, { id, argv: nextCommand, status: "failed", output: error instanceof Error ? error.message : "命令无效", collapsed: false }] }));
       return;
     }
     updateCurrentTask((current) => {
       return appendRun(current, {
         id,
-        argv: command,
+        argv: nextCommand,
         status: "running",
-        output: `命令已启动：${command.join(" ")}\n`,
+        output: `命令已启动：${nextCommand.join(" ")}\n`,
         collapsed: false,
       });
     });
@@ -369,6 +373,28 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
         finishRun(appendOutput(owner, id, `\n执行失败：${error instanceof Error ? error.message : String(error)}\n`), id, "failed"),
       ));
     });
+  };
+
+  const runCommand = () => {
+    if (task.status === "running") {
+      const activeRun = task.runs.find((run) => run.status === "running");
+      if (activeRun) {
+        void invoke("stop_tool", { runId: activeRun.id }).catch((error) => {
+          setTasks((current) => updateTaskContainingRun(current, activeRun.id, (owner) =>
+            appendOutput(owner, activeRun.id, `\n停止失败：${error instanceof Error ? error.message : String(error)}\n`),
+          ));
+        });
+      }
+      return;
+    }
+    runWithParameters(task.parameters as ToolParameters);
+  };
+
+  const applyAndRunSuggestion = (suggestion: TaskSuggestion) => {
+    if (task.status === "running") return;
+    const snapshot = applySuggestionPatch(selection.toolId, task.parameters as ToolParameters, suggestion.patch);
+    updateCurrentTask((current) => ({ ...current, parameters: snapshot }));
+    runWithParameters(snapshot);
   };
 
   const sendToolInput = (runId: string, input: string) => {
@@ -477,7 +503,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
           {isWebTool ? <div className="web-workspace-grid">
             <div className="web-output-stack">
               <CommandTerminal runs={task.runs} commandPreview={command.join(" ")} onToggleRun={toggleRun} flagHits={flagHits} runningRunId={task.runs.find((run) => run.status === "running")?.id} onSendInput={(input) => { const run = task.runs.find((item) => item.status === "running"); if (run) sendToolInput(run.id, input); }} />
-              <ResultsPanel findings={task.findings} suggestions={task.suggestions} flagEnabled={flagSettings.enabled} flagPrefixes={prefixes} flagHits={flagHits} />
+              <ResultsPanel findings={task.findings} suggestions={suggestions} running={task.status === "running"} onApplySuggestion={applyAndRunSuggestion} flagEnabled={flagSettings.enabled} flagPrefixes={prefixes} flagHits={flagHits} />
             </div>
             <ParameterPanel toolId={selection.toolId} parameters={task.parameters as ToolParameters} findings={task.findings} onChange={updateParameter} />
           </div> : selection.toolId === "crypto" ?

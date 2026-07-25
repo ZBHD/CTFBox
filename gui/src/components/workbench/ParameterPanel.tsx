@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
 import { getToolSchema, type ParameterField, type ParameterOption } from "../../lib/toolSchemas";
 import type { StructuredFinding } from "../../state/taskStore";
+import "./ParameterPanel.css";
 
 interface ParameterPanelProps {
   toolId: string;
@@ -57,6 +58,52 @@ function ChoiceField({
   );
 }
 
+function ResultChoiceField({
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  options: readonly ParameterOption[];
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`choice-field result-choice-field ${open ? "choice-field-open" : ""}`}>
+      <input
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button
+        type="button"
+        className="result-choice-trigger"
+        title="选择已发现结果"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="choice-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              type="button"
+              className={value === option.value ? "choice-option active" : "choice-option"}
+              key={option.value}
+              onClick={() => { onChange(option.value); setOpen(false); }}
+            >
+              <span>{option.label}</span>{value === option.value && <Check size={12} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BooleanField({ field, checked, onChange }: { field: ParameterField; checked: boolean; onChange: ParameterPanelProps["onChange"] }) {
   return (
     <label className="parameter-toggle-row">
@@ -70,12 +117,14 @@ function BooleanField({ field, checked, onChange }: { field: ParameterField; che
 function ParameterControl({
   field,
   value,
+  parameters,
   findings,
   onChange,
   openFileDialog,
 }: {
   field: ParameterField;
   value: string | boolean | number | undefined;
+  parameters: ToolParameters;
   findings: StructuredFinding[];
   onChange: ParameterPanelProps["onChange"];
   openFileDialog: () => Promise<string | null>;
@@ -99,13 +148,52 @@ function ParameterControl({
     );
   }
 
-  const resultValues = field.resultKind
-    ? findings.filter((finding) => finding.kind === field.resultKind).map((finding) => finding.value)
+  let resultFindings = field.resultKind
+    ? findings.filter((finding) => finding.kind === field.resultKind)
     : [];
+  const selectedDatabase = String(parameters.database ?? "").trim();
+  const selectedTable = String(parameters.table ?? "").trim();
+  if (field.resultKind === "table" && selectedDatabase) {
+    resultFindings = resultFindings.filter((finding) => finding.database === selectedDatabase);
+  }
+  if (field.resultKind === "column") {
+    if (selectedDatabase) {
+      resultFindings = resultFindings.filter((finding) => finding.database === selectedDatabase);
+    }
+    if (selectedTable) {
+      resultFindings = resultFindings.filter((finding) => finding.table === selectedTable);
+    }
+  }
+  if ((field.resultKind === "table" && !selectedDatabase)
+    || (field.resultKind === "column" && (!selectedDatabase || !selectedTable))) {
+    const contexts = new Map<string, Set<string>>();
+    for (const finding of resultFindings) {
+      const context = `${finding.database ?? ""}\u0000${finding.table ?? ""}`;
+      const values = contexts.get(finding.value) ?? new Set<string>();
+      values.add(context);
+      contexts.set(finding.value, values);
+    }
+    resultFindings = resultFindings.filter((finding) => contexts.get(finding.value)?.size === 1);
+  }
+  const resultValues = resultFindings.map((finding) => finding.value);
   const resultOptions = Array.from(new Set(resultValues)).map((item) => ({ value: item, label: item }));
   const commonLabel = <div className="parameter-field-label"><strong>{field.label}</strong><code>{field.flag}</code></div>;
 
-  if (field.control === "select" || (field.control === "result-select" && resultOptions.length > 0)) {
+  if (field.control === "result-select" && resultOptions.length > 0) {
+    return (
+      <div className="parameter-field">
+        {commonLabel}
+        <ResultChoiceField
+          value={String(value ?? "")}
+          options={resultOptions}
+          placeholder={field.placeholder}
+          onChange={(next) => onChange(field.id, next)}
+        />
+      </div>
+    );
+  }
+
+  if (field.control === "select") {
     return (
       <div className="parameter-field">
         {commonLabel}
@@ -208,7 +296,7 @@ export function ParameterPanel({ toolId, parameters, findings = [], onChange, op
           </div>
         </div>
         <div className="parameter-fields">
-          {visibleFields.map((field) => <ParameterControl key={field.id} field={field} value={parameters[field.id]} findings={findings} onChange={onChange} openFileDialog={openFileDialog} />)}
+          {visibleFields.map((field) => <ParameterControl key={field.id} field={field} value={parameters[field.id]} parameters={parameters} findings={findings} onChange={onChange} openFileDialog={openFileDialog} />)}
           {visibleFields.length === 0 && <div className="parameter-no-results">没有匹配的参数</div>}
         </div>
       </div>

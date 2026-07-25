@@ -119,9 +119,15 @@ class InstallerConfigTests(unittest.TestCase):
             )
         self.assertRegex(
             verification_step,
-            r"cargo test --locked --manifest-path "
+            r"(?m)^\s{10}cargo test --locked --manifest-path "
             r'"gui/src-tauri/Cargo\.toml" --test updater_signature -- '
-            r"--ignored --exact signed_updater_archive_matches_embedded_public_key",
+            r"--ignored --exact signed_updater_archive_matches_embedded_public_key "
+            r"\| Tee-Object -Variable verificationOutput$",
+        )
+        self.assertRegex(
+            verification_step,
+            r"\(\$verificationOutput -join \"`n\"\) -notmatch "
+            r"'test result: ok\\\. 1 passed; 0 failed; 0 ignored;'",
         )
 
         release_step = workflow_step(workflow, "发布到 GitHub Release")

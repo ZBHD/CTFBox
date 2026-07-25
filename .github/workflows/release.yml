@@ -93,8 +93,11 @@ jobs:
           $env:CTFBOX_UPDATER_ARCHIVE = $updater.FullName
           $env:CTFBOX_UPDATER_SIGNATURE = $decodedSignatureFile
           $env:CTFBOX_UPDATER_PUBLIC_KEY = $publicKeyFile
-          cargo test --locked --manifest-path "gui/src-tauri/Cargo.toml" --test updater_signature -- --ignored --exact signed_updater_archive_matches_embedded_public_key
+          cargo test --locked --manifest-path "gui/src-tauri/Cargo.toml" --test updater_signature -- --ignored --exact signed_updater_archive_matches_embedded_public_key | Tee-Object -Variable verificationOutput
           if ($LASTEXITCODE -ne 0) { throw "更新签名验证失败" }
+          if (($verificationOutput -join "`n") -notmatch 'test result: ok\. 1 passed; 0 failed; 0 ignored;') {
+            throw "更新签名验证未执行唯一的门禁测试"
+          }
 
       - name: 发布到 GitHub Release
         shell: pwsh

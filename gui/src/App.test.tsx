@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { StrictMode, type ComponentType } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { type AppUpdateAdapter } from "./App";
@@ -102,6 +102,19 @@ function renderApp(updateAdapter: TestUpdateAdapter) {
   return renderer;
 }
 
+function renderStrictApp(updateAdapter: TestUpdateAdapter) {
+  let renderer!: ReactTestRenderer;
+  act(() => {
+    renderer = create(
+      <StrictMode>
+        <TestableApp updateAdapter={updateAdapter} />
+      </StrictMode>,
+    );
+  });
+  mounted.push(renderer);
+  return renderer;
+}
+
 async function openUpdateSettings(renderer: ReactTestRenderer) {
   act(() => button(renderer.root, "设置").props.onClick());
   act(() => button(renderer.root, "版本更新").props.onClick());
@@ -137,6 +150,47 @@ afterEach(() => {
 });
 
 describe("App update integration", () => {
+  it("survives the StrictMode development mount-cleanup-remount lifecycle", async () => {
+    const firstCheck = deferred<UpdateResult>();
+    const discardedUpdate = makeHandle("0.2.0");
+    const activeUpdate = makeHandle("0.3.0");
+    const checkOptions: CheckLatestOptions[] = [];
+    const checkLatest = vi.fn((options: CheckLatestOptions = {}) => {
+      checkOptions.push(options);
+      return checkOptions.length === 1
+        ? firstCheck.promise
+        : Promise.resolve(available(activeUpdate));
+    });
+    const updateAdapter = adapter({ checkLatest });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    // React test renderer 18 marks strict roots but does not replay passive effects.
+    // Explicitly remount the real StrictMode tree to reproduce ReactDOM's dev cleanup cycle.
+    const firstMount = renderStrictApp(updateAdapter);
+    expect(checkLatest).toHaveBeenCalledOnce();
+    act(() => firstMount.unmount());
+    mounted.splice(mounted.indexOf(firstMount), 1);
+    expect(checkOptions[0].signal?.aborted).toBe(true);
+
+    const activeMount = renderStrictApp(updateAdapter);
+    await flush();
+    expect(checkLatest).toHaveBeenCalledTimes(2);
+    expect(activeMount.root.findAllByProps({ "aria-label": "发现新版本 v0.3.0" })).toHaveLength(1);
+    expect(activeUpdate.close).not.toHaveBeenCalled();
+
+    await act(async () => firstCheck.resolve(available(discardedUpdate)));
+    expect(discardedUpdate.close).toHaveBeenCalledOnce();
+    expect(activeMount.root.findAllByProps({ "aria-label": "发现新版本 v0.3.0" })).toHaveLength(1);
+    expect(activeMount.root.findAllByProps({ "aria-label": "发现新版本 v0.2.0" })).toHaveLength(0);
+
+    act(() => activeMount.unmount());
+    mounted.splice(mounted.indexOf(activeMount), 1);
+    await flush();
+    expect(activeUpdate.close).toHaveBeenCalledOnce();
+    expect(discardedUpdate.close).toHaveBeenCalledOnce();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it("renders the main application before the silent startup check resolves", () => {
     const check = deferred<UpdateResult>();
     const renderer = renderApp(adapter({ checkLatest: vi.fn(() => check.promise) }));

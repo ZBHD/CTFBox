@@ -8,6 +8,7 @@ import {
   applyToolStreamEvent,
   updateTaskContainingRun,
   type CommandRun,
+  type ToolStreamEvent,
 } from "./taskStore";
 
 const run: CommandRun = {
@@ -63,6 +64,27 @@ describe("in-memory task state", () => {
     expect(completed.runs[0].output).toBe("sqlmap output\n");
     expect(completed.runs[0].status).toBe("completed");
     expect(completed.status).toBe("completed");
+  });
+
+  it("merges contextual analysis findings into the owning run only", () => {
+    const task = appendRun(createTask("sqlmap"), run);
+    const event: ToolStreamEvent = {
+      event: "analysis",
+      runId: "run-1",
+      findings: [
+        { kind: "table", value: "users", database: "app" },
+        { kind: "table", value: "users", database: "audit" },
+        { kind: "table", value: "users", database: "app" },
+      ],
+    };
+
+    const next = applyToolStreamEvent(task, event);
+
+    expect(next.findings).toEqual([
+      { kind: "table", value: "users", database: "app", runId: "run-1" },
+      { kind: "table", value: "users", database: "audit", runId: "run-1" },
+    ]);
+    expect(next.runs[0].output).toBe("");
   });
 
   it("updates only the task that owns a run id", () => {

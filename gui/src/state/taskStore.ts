@@ -11,7 +11,10 @@ export interface CommandRun {
 export interface StructuredFinding {
   kind: string;
   value: string;
-  [key: string]: unknown;
+  database?: string;
+  table?: string;
+  detail?: string;
+  runId?: string;
 }
 
 export interface TaskSuggestion {
@@ -31,6 +34,7 @@ export interface TaskState {
 
 export type ToolStreamEvent =
   | { event: "output"; runId: string; stream: "stdout" | "stderr"; chunk: string }
+  | { event: "analysis"; runId: string; findings: StructuredFinding[] }
   | { event: "exit"; runId: string; status: "completed" | "failed" | "stopped"; code?: number | null };
 
 export function createTask(toolId: string): TaskState {
@@ -63,11 +67,44 @@ export function finishRun(state: TaskState, runId: string, status: "completed" |
   return { ...state, runs, status };
 }
 
+function findingKey(finding: StructuredFinding) {
+  return JSON.stringify([
+    finding.kind,
+    finding.value,
+    finding.database ?? null,
+    finding.table ?? null,
+    finding.detail ?? null,
+  ]);
+}
+
+export function appendFindings(
+  state: TaskState,
+  runId: string,
+  findings: StructuredFinding[],
+): TaskState {
+  const keys = new Set(state.findings.map(findingKey));
+  const additions: StructuredFinding[] = [];
+  for (const finding of findings) {
+    const key = findingKey(finding);
+    if (keys.has(key)) continue;
+    keys.add(key);
+    additions.push({ ...finding, runId });
+  }
+  return additions.length > 0
+    ? { ...state, findings: [...state.findings, ...additions] }
+    : state;
+}
+
 export function applyToolStreamEvent(state: TaskState, event: ToolStreamEvent): TaskState {
   if (!state.runs.some((run) => run.id === event.runId)) return state;
-  return event.event === "output"
-    ? appendOutput(state, event.runId, event.chunk)
-    : finishRun(state, event.runId, event.status);
+  switch (event.event) {
+    case "output":
+      return appendOutput(state, event.runId, event.chunk);
+    case "analysis":
+      return appendFindings(state, event.runId, event.findings);
+    case "exit":
+      return finishRun(state, event.runId, event.status);
+  }
 }
 
 export function updateTaskContainingRun(

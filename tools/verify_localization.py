@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from fnmatch import fnmatchcase
 import os
 from pathlib import Path
 import re
@@ -23,24 +24,6 @@ PLACEHOLDER_RE = re.compile(
     r"%(?:\([A-Za-z_][A-Za-z0-9_]*\))?[#0 +\-]?(?:\d+|\*)?(?:\.\d+)?[diouxXeEfFgGcrsa%]"
     r"|\{(?:[A-Za-z_][A-Za-z0-9_]*|\d+)(?:![rsa])?(?::[^{}]+)?\}"
 )
-TEXT_EXTENSIONS = {
-    ".conf",
-    ".html",
-    ".json",
-    ".md",
-    ".md5",
-    ".pl",
-    ".py",
-    ".sh",
-    ".sql",
-    ".txt",
-    ".xml",
-    ".yaml",
-    ".yml",
-}
-TEXT_FILENAMES = {".gitattributes", ".gitignore", "COMMITMENT", "LICENSE"}
-
-
 class CheckResults:
     def __init__(self) -> None:
         self.failures: list[str] = []
@@ -52,13 +35,32 @@ class CheckResults:
             self.failures.append(message)
 
 
+def is_declared_binary(path: Path) -> bool:
+    declared: bool | None = None
+    for parent in reversed(path.parents):
+        attributes = parent / ".gitattributes"
+        if not attributes.is_file():
+            continue
+        relative = path.relative_to(parent).as_posix()
+        for raw_line in attributes.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split()
+            pattern, settings = fields[0], fields[1:]
+            target = relative if "/" in pattern else path.name
+            if not fnmatchcase(target, pattern):
+                continue
+            if "binary" in settings or "-text" in settings:
+                declared = True
+            elif "-binary" in settings or "text" in settings:
+                declared = False
+    return declared is True
+
+
 def sha256(path: Path) -> str:
     content = path.read_bytes()
-    is_text = (
-        b"\0" not in content
-        and (path.suffix.lower() in TEXT_EXTENSIONS or path.name in TEXT_FILENAMES)
-    )
-    if is_text:
+    if b"\0" not in content and not is_declared_binary(path):
         content = content.replace(b"\r\n", b"\n")
     return hashlib.sha256(content).hexdigest()
 

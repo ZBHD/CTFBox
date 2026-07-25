@@ -26,9 +26,9 @@ pub trait ToolOutputAnalyzer: Send {
     fn push(&mut self, stream: StreamKind, chunk: &str, eof: bool) -> Vec<Finding>;
 }
 
-pub fn analyzer_for(tool_id: &str) -> Option<Box<dyn ToolOutputAnalyzer>> {
+pub fn analyzer_for(tool_id: &str, arguments: &[String]) -> Option<Box<dyn ToolOutputAnalyzer>> {
     match tool_id {
-        "sqlmap" => Some(Box::new(sqlmap::SqlmapAnalyzer::default())),
+        "sqlmap" => Some(Box::new(sqlmap::SqlmapAnalyzer::new(arguments))),
         "sstimap" => Some(Box::new(sstimap::SstimapAnalyzer::default())),
         _ => None,
     }
@@ -115,8 +115,8 @@ mod tests {
 
     #[test]
     fn registry_returns_only_supported_analyzers() {
-        assert!(analyzer_for("sqlmap").is_some());
-        assert!(analyzer_for("sstimap").is_some());
-        assert!(analyzer_for("crypto").is_none());
+        assert!(analyzer_for("sqlmap", &[]).is_some());
+        assert!(analyzer_for("sstimap", &[]).is_some());
+        assert!(analyzer_for("crypto", &[]).is_none());
     }
 }

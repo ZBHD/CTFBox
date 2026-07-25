@@ -323,8 +323,8 @@ fn run_tool(
     if let Ok(mut children) = manager.children.lock() {
         children.insert(request.run_id.clone(), child.clone());
     }
-    let analyzer =
-        analysis::analyzer_for(&request.tool_id).map(|value| Arc::new(Mutex::new(value)));
+    let analyzer = analysis::analyzer_for(&request.tool_id, &request.arguments)
+        .map(|value| Arc::new(Mutex::new(value)));
     let stdout_thread = forward_stream(
         stdout,
         on_event.clone(),
@@ -491,7 +491,8 @@ mod tests {
 
     #[test]
     fn analyzes_chunks_without_consuming_the_output_text() {
-        let analyzer = analysis::analyzer_for("sqlmap").map(|value| Arc::new(Mutex::new(value)));
+        let analyzer =
+            analysis::analyzer_for("sqlmap", &[]).map(|value| Arc::new(Mutex::new(value)));
         let output = "available databases [1]:\n[*] app\n";
 
         let findings = analyze_chunk(&analyzer, StreamKind::Stdout, output, false);
@@ -499,6 +500,29 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].value, "app");
         assert_eq!(output, "available databases [1]:\n[*] app\n");
+    }
+
+    #[test]
+    fn passes_sqlmap_run_arguments_into_the_output_analyzer() {
+        let arguments = vec!["--columns".into(), "-T".into(), "users".into()];
+        let analyzer =
+            analysis::analyzer_for("sqlmap", &arguments).map(|value| Arc::new(Mutex::new(value)));
+        let output = concat!(
+            "<current>\n",
+            "[1 column]\n",
+            "+--------+---------+\n",
+            "| Column | Type    |\n",
+            "+--------+---------+\n",
+            "| id     | INTEGER |\n",
+            "+--------+---------+\n",
+        );
+
+        let findings = analyze_chunk(&analyzer, StreamKind::Stdout, output, false);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].value, "id");
+        assert_eq!(findings[0].database, None);
+        assert_eq!(findings[0].table.as_deref(), Some("users"));
     }
 }
 

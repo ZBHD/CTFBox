@@ -84,10 +84,19 @@ function buildSqlmapSuggestions(
   ].includes(finding.kind));
   if (!hasEvidence) return [];
 
+  const dbmsValues = uniqueFindingValues(findings, "dbms");
+  const isSqlite = dbmsValues.length === 1 && /^sqlite\b/i.test(dbmsValues[0]);
   const databases = uniqueFindingValues(findings, "database");
   const database = selectedOrOnly(textParameter(parameters, "database"), databases);
   if (!database) {
     if (databases.length > 1) return [];
+    if (isSqlite) {
+      return [{
+        id: "sqlmap-enumerate-tables-sqlite",
+        label: "枚举 SQLite 数据表",
+        patch: { tables: true },
+      }];
+    }
     return [{
       id: "sqlmap-enumerate-databases",
       label: "枚举可用数据库",

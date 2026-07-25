@@ -26,6 +26,19 @@ describe("task suggestion engine", () => {
     ]);
   });
 
+  it("skips unsupported database enumeration for SQLite", () => {
+    expect(buildTaskSuggestions("sqlmap", base, [
+      { kind: "injection-point", value: "id" },
+      { kind: "dbms", value: "SQLite" },
+    ])).toEqual([
+      {
+        id: "sqlmap-enumerate-tables-sqlite",
+        label: "枚举 SQLite 数据表",
+        patch: { tables: true },
+      },
+    ]);
+  });
+
   it("uses a single database candidate for the table step", () => {
     expect(buildTaskSuggestions("sqlmap", base, [
       { kind: "database", value: "app" },

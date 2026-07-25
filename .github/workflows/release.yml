@@ -109,19 +109,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
         run: |
-          $asset = Get-Item "gui/src-tauri/target/release/bundle/nsis/*-setup.exe"
+          $sourceAsset = Get-Item "gui/src-tauri/target/release/bundle/nsis/*-setup.exe"
           $updater = Get-Item "gui/src-tauri/target/release/bundle/nsis/*.nsis.zip"
-          if (@($asset).Count -ne 1) { throw "安装包数量异常：$(@($asset).Count)" }
+          if (@($sourceAsset).Count -ne 1) { throw "安装包数量异常：$(@($sourceAsset).Count)" }
           if (@($updater).Count -ne 1) { throw "更新归档数量异常：$(@($updater).Count)" }
-          $signatureFile = "$($updater.FullName).sig"
-          $signatureAsset = Get-Item -LiteralPath $signatureFile
-          $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
-          "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
           $tag = $env:GITHUB_REF_NAME
           $version = $env:RELEASE_VERSION
           if ($tag -ne "v$version" -or $version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
             throw "发布版本输出无效"
           }
+          $assetName = "CTFBox-$version-windows-x64-setup.exe"
+          $assetPath = Join-Path $env:RUNNER_TEMP $assetName
+          Copy-Item -LiteralPath $sourceAsset.FullName -Destination $assetPath
+          $asset = Get-Item -LiteralPath $assetPath
+          $signatureFile = "$($updater.FullName).sig"
+          $signatureAsset = Get-Item -LiteralPath $signatureFile
+          $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
+          "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $signature = (Get-Content -LiteralPath $signatureFile -Raw).Trim()
           $repositoryUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"

@@ -141,6 +141,31 @@ class InstallerConfigTests(unittest.TestCase):
         self.assertLess(workflow.index(verification_step), workflow.index(release_step))
         self.assertRegex(
             release_step,
+            r'(?m)^\s{10}\$sourceAsset\s*=\s*Get-Item '
+            r'"gui/src-tauri/target/release/bundle/nsis/\*-setup\.exe"$',
+        )
+        self.assertIn(
+            '$assetName = "CTFBox-$version-windows-x64-setup.exe"',
+            release_step,
+        )
+        self.assertIn(
+            '$assetPath = Join-Path $env:RUNNER_TEMP $assetName',
+            release_step,
+        )
+        self.assertIn(
+            'Copy-Item -LiteralPath $sourceAsset.FullName -Destination $assetPath',
+            release_step,
+        )
+        self.assertIn(
+            '$asset = Get-Item -LiteralPath $assetPath',
+            release_step,
+        )
+        self.assertLess(
+            release_step.index('$assetName = "CTFBox-$version-windows-x64-setup.exe"'),
+            release_step.index('$checksum = (Get-FileHash -LiteralPath $asset.FullName'),
+        )
+        self.assertRegex(
+            release_step,
             r'(?m)^          \$signatureFile\s*=\s*"\$\(\$updater\.FullName\)\.sig"$',
         )
         self.assertRegex(
@@ -216,6 +241,7 @@ class InstallerConfigTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("bundle/nsis/*-setup.exe", workflow)
+        self.assertIn('CTFBox-$version-windows-x64-setup.exe', workflow)
         self.assertNotIn("bundle/portable", workflow)
 
     def test_windows_powershell_build_script_is_ascii_compatible(self):

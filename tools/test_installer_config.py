@@ -20,8 +20,8 @@ def workflow_step(workflow: str, name: str) -> str:
 
 
 class InstallerConfigTests(unittest.TestCase):
-    def test_release_version_is_1_1_2_and_consistent(self):
-        expected = "1.1.2"
+    def test_release_version_is_0_1_2_and_consistent(self):
+        expected = "0.1.2"
         tauri_config = json.loads(
             (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
                 encoding="utf-8"

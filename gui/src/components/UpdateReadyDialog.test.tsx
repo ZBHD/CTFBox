@@ -180,6 +180,27 @@ describe("UpdateReadyDialog", () => {
     expect(onPostpone).not.toHaveBeenCalled();
   });
 
+  it("shows a restart failure and delegates the supplied retry action", async () => {
+    const onRestart = vi.fn();
+    const dialog = create(
+      <UpdateReadyDialog
+        version="0.2.0"
+        error="重启应用失败：restart failed"
+        actionLabel="再次重启"
+        onPostpone={() => undefined}
+        onRestart={onRestart}
+      />,
+    );
+
+    try {
+      expect(textContent(dialog.root.findByProps({ role: "alert" }))).toBe("重启应用失败：restart failed");
+      act(() => findButton(dialog.root, "再次重启").props.onClick());
+      expect(onRestart).toHaveBeenCalledOnce();
+    } finally {
+      await unmountDialog(dialog);
+    }
+  });
+
   it("handles Escape globally once and ignores repeat or unrelated keys", async () => {
     const harness = createDomHarness();
     const { dialog, onPostpone, onRestart } = renderDialogWithDom(harness);

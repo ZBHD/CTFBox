@@ -34,8 +34,13 @@ function controlledProps(
     onSectionChange: (section: SettingsSection) => void;
     onCheckUpdate: () => void;
     onStartUpdate: () => void;
+    onRestartUpdate: () => void;
     onOpenGitHub: () => void;
     onOpenReleaseNotes: () => void;
+    restartBusy: boolean;
+    restartError: string | undefined;
+    restartActionLabel: string;
+    linkError: string | undefined;
   }> = {},
 ) {
   return {
@@ -48,11 +53,47 @@ function controlledProps(
     updateState,
     onCheckUpdate: () => undefined,
     onStartUpdate: () => undefined,
+    onRestartUpdate: () => undefined,
     onOpenGitHub: () => undefined,
     onOpenReleaseNotes: () => undefined,
+    restartBusy: false,
+    restartError: undefined,
+    restartActionLabel: "立即重启",
+    linkError: undefined,
     ...overrides,
   };
 }
+
+function assertControlledRestartContract() {
+  // @ts-expect-error Controlled update settings require restart and link status props.
+  return <SettingsPanel
+    value={settings}
+    theme="dark"
+    onChange={() => undefined}
+    onThemeChange={() => undefined}
+    section="updates"
+    onSectionChange={() => undefined}
+    updateState={idleState}
+    onCheckUpdate={() => undefined}
+    onStartUpdate={() => undefined}
+    onOpenGitHub={() => undefined}
+    onOpenReleaseNotes={() => undefined}
+  />;
+}
+
+function assertLegacyHasNoRestartAction() {
+  // @ts-expect-error Legacy settings must not expose a disconnected restart action.
+  return <SettingsPanel
+    value={settings}
+    theme="dark"
+    onChange={() => undefined}
+    onThemeChange={() => undefined}
+    onRestartUpdate={() => undefined}
+  />;
+}
+
+void assertControlledRestartContract;
+void assertLegacyHasNoRestartAction;
 
 function textContent(node: ReactTestInstance): string {
   return node.children
@@ -97,11 +138,17 @@ describe("SettingsPanel", () => {
       [cssRuleColor(':root[data-theme="light"] .update-version-item span'), "#f6f9fa"],
       [cssRuleColor(".update-progress-heading span, .update-progress-bytes"), "#10171d"],
       [cssRuleColor(':root[data-theme="light"] .update-progress-heading span, :root[data-theme="light"] .update-progress-bytes'), "#ffffff"],
+      [cssRuleColor(".update-inline-error"), "#24171b"],
+      [cssRuleColor(':root[data-theme="light"] .update-inline-error'), "#fff3f4"],
+      [cssRuleColor(".update-ready-error"), "#24171b"],
+      [cssRuleColor(':root[data-theme="light"] .update-ready-error'), "#fff3f4"],
     ];
 
     for (const [foreground, background] of colors) {
       expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(4.5);
     }
+    expect(stylesheet).toMatch(/\.update-inline-error\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(stylesheet).toMatch(/\.update-ready-error\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
   });
 
   it("exposes an appearance section for the persisted theme", () => {
@@ -224,6 +271,74 @@ describe("SettingsPanel", () => {
     );
 
     expect(html).toContain(expected);
+  });
+
+  it("keeps a restart action in the ready settings state and disables it while busy", () => {
+    const onRestartUpdate = vi.fn();
+    const readyState: UpdateState = {
+      phase: "ready",
+      currentVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      downloadedBytes: 128,
+      totalBytes: 128,
+    };
+    const panel = create(
+      <SettingsPanel
+        {...controlledProps(readyState, {
+          onRestartUpdate,
+          restartBusy: true,
+          restartActionLabel: "重试安装",
+        })}
+      />,
+    );
+    const restart = findButton(panel.root, "重试安装");
+
+    expect(restart?.props.disabled).toBe(true);
+    act(() => panel.update(
+      <SettingsPanel
+        {...controlledProps(readyState, {
+          onRestartUpdate,
+          restartBusy: false,
+          restartActionLabel: "重试安装",
+        })}
+      />,
+    ));
+    const enabledRestart = findButton(panel.root, "重试安装");
+    expect(enabledRestart?.props.disabled).toBe(false);
+    act(() => enabledRestart?.props.onClick());
+    expect(onRestartUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows restart and link failures in independent alert regions", () => {
+    const panel = create(
+      <SettingsPanel
+        {...controlledProps({
+          phase: "ready",
+          currentVersion: "0.1.0",
+          latestVersion: "0.2.0",
+          downloadedBytes: 128,
+        }, {
+          restartError: "安装更新失败：installer failed",
+          restartActionLabel: "重试安装",
+          linkError: "打开链接失败：offline",
+        })}
+      />,
+    );
+    const alerts = panel.root.findAllByProps({ role: "alert" }).map(textContent);
+
+    expect(alerts).toContain("安装更新失败：installer failed");
+    expect(alerts).toContain("打开链接失败：offline");
+    expect(textContent(panel.root)).toContain("重试安装");
+  });
+
+  it("does not expose update actions in the legacy settings panel", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel value={settings} theme="dark" onChange={() => undefined} onThemeChange={() => undefined} />,
+    );
+
+    expect(html).not.toContain("立即重启");
+    expect(html).not.toContain("重试安装");
+    expect(html).not.toContain("再次重启");
   });
 
   it("formats a check error and checks again", () => {

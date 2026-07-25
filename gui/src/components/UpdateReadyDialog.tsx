@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 export interface UpdateReadyDialogProps {
   version: string;
   busy?: boolean;
+  error?: string;
+  actionLabel?: string;
   onPostpone: () => void;
   onRestart: () => void;
 }
@@ -32,6 +34,8 @@ function shouldRestorePreviousFocus(): boolean {
 export function UpdateReadyDialog({
   version,
   busy = false,
+  error,
+  actionLabel = "立即重启",
   onPostpone,
   onRestart,
 }: UpdateReadyDialogProps) {
@@ -152,6 +156,7 @@ export function UpdateReadyDialog({
           </div>
         </div>
         <p>更新已经过验证，将在重启时完成安装。</p>
+        {error && <div className="update-ready-error" role="alert">{error}</div>}
         <div className="update-ready-actions">
           <button
             ref={postponeRef}
@@ -170,7 +175,7 @@ export function UpdateReadyDialog({
             autoFocus
             onClick={() => runAction(onRestart)}
           >
-            立即重启
+            {actionLabel}
           </button>
         </div>
       </div>

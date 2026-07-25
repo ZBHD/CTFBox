@@ -408,7 +408,9 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .update-progress-track > span { height: 100%; display: block; margin: 0; background: var(--green); }
 .update-progress-indeterminate > span { width: 100% !important; opacity: .35; }
 .update-progress-bytes { grid-column: 1 / -1; margin: 0; text-align: right; }
-.update-links { min-height: 50px; display: flex; align-items: center; gap: 8px; padding: 8px 16px; }
+.update-links { min-height: 50px; display: flex; align-items: stretch; flex-direction: column; gap: 8px; padding: 8px 16px; }
+.update-link-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.update-inline-error { padding: 9px 11px; border: 1px solid #663942; border-radius: 4px; color: #e6a0a8; background: #24171b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .update-ready-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.5); }
 .update-ready-dialog { width: min(420px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; border-radius: 6px; border: 1px solid #33414b; color: var(--text); background: #11191f; box-shadow: 0 18px 48px rgba(0,0,0,.42); }
@@ -418,6 +420,7 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .update-ready-heading h2 { margin: 0; color: #e3ebef; font-size: 16px; line-height: 1.4; }
 .update-ready-version { display: block; margin-top: 3px; overflow-wrap: anywhere; color: #73d7b2; font: 600 12px/1.4 "Cascadia Mono", Consolas, monospace; }
 .update-ready-dialog > p { margin: 0; padding: 15px 20px; color: #8998a2; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.update-ready-error { margin: 0 20px; padding: 10px 11px; border: 1px solid #663942; border-radius: 4px; color: #e6a0a8; background: #24171b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .update-ready-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 20px 18px; }
 .update-ready-actions button { min-width: 108px; min-height: 36px; padding: 0 14px; border-radius: 4px; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .update-ready-secondary { border: 1px solid #3a4751; color: #adbac2; background: #182127; }
@@ -524,6 +527,7 @@ body { font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] .update-status small { color: #61747d; }
 :root[data-theme="light"] .update-status-error strong { color: #a82e3b; }
 :root[data-theme="light"] .update-status-error small { color: #9a4c55; }
+:root[data-theme="light"] .update-inline-error { border-color: #d6a8ad; color: #9a3440; background: #fff3f4; }
 :root[data-theme="light"] .update-secondary-action,
 :root[data-theme="light"] .update-links button { border-color: #c6d1d5; color: #536771; background: #f3f6f7; }
 :root[data-theme="light"] .update-secondary-action:hover,
@@ -534,6 +538,7 @@ body { font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] .update-ready-heading h2 { color: #203039; }
 :root[data-theme="light"] .update-ready-version { color: #087153; }
 :root[data-theme="light"] .update-ready-dialog > p { color: #566a74; }
+:root[data-theme="light"] .update-ready-error { border-color: #d6a8ad; color: #9a3440; background: #fff3f4; }
 :root[data-theme="light"] .update-ready-secondary { border-color: #c6d1d5; color: #536771; background: #f3f6f7; }
 :root[data-theme="light"] .update-ready-secondary:hover { border-color: #72aa95; color: #086b4b; background: #dcefe8; }
 :root[data-theme="light"] .update-ready-primary:focus-visible, :root[data-theme="light"] .update-ready-secondary:focus-visible { outline-color: #237f99; }

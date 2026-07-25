@@ -104,6 +104,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const [updateHandle, setUpdateHandle] = useState<UpdateHandle | null>(null);
   const [restartDialogPostponed, setRestartDialogPostponed] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
+  const [restartError, setRestartError] = useState<string>();
+  const [linkError, setLinkError] = useState<string>();
   const [flagSettings, setFlagSettings] = useState<FlagSettings>(() => ({
     ...DEFAULT_FLAG_SETTINGS,
     prefixes: loadFlagPrefixes(),
@@ -120,6 +122,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const downloadBusyRef = useRef(false);
   const restartBusyRef = useRef(false);
   const installedRef = useRef(false);
+  const linkSequenceRef = useRef(0);
 
   const commitUpdateState = useCallback((state: UpdateState) => {
     updateStateRef.current = state;
@@ -175,6 +178,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
       adoptUpdateHandle(result.update ?? null);
       if (result.update) {
         installedRef.current = false;
+        setRestartError(undefined);
         setRestartDialogPostponed(false);
       }
     } catch (error) {
@@ -222,6 +226,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     const ownedHandle = updateHandleRef.current;
     if (!ownedHandle || downloadBusyRef.current || updateStateRef.current.phase === "downloading") return;
     downloadBusyRef.current = true;
+    setRestartError(undefined);
     setRestartDialogPostponed(false);
 
     void Promise.resolve().then(() => updateAdapter.downloadUpdate(ownedHandle, updateStateRef.current, (state) => {
@@ -253,6 +258,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     if (!ownedHandle || restartBusyRef.current) return;
     restartBusyRef.current = true;
     setRestartBusy(true);
+    setRestartError(undefined);
 
     const relaunchOnly = installedRef.current;
     const restart = Promise.resolve().then(() => relaunchOnly
@@ -260,15 +266,18 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
       : updateAdapter.installAndRelaunch(ownedHandle, { relaunch: updateAdapter.relaunch }));
 
     void restart.then(() => {
-      if (!relaunchOnly) installedRef.current = true;
+      installedRef.current = true;
+      if (mountedRef.current && updateHandleRef.current === ownedHandle) {
+        setRestartError("更新已安装，但应用仍在运行，请再次重启");
+      }
     }).catch((error) => {
       if (!mountedRef.current || updateHandleRef.current !== ownedHandle) return;
       if (error instanceof UpdateRelaunchError || installedRef.current) {
         installedRef.current = true;
-        commitUpdateState({ ...updateStateRef.current, phase: "ready", error: formatUpdateError(error) });
+        setRestartError(`重启应用失败：${formatUpdateError(error)}`);
         return;
       }
-      commitUpdateState({ ...updateStateRef.current, phase: "error", error: formatUpdateError(error) });
+      setRestartError(`安装更新失败：${formatUpdateError(error)}`);
     }).finally(() => {
       restartBusyRef.current = false;
       if (mountedRef.current) setRestartBusy(false);
@@ -276,9 +285,12 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   };
 
   const openExternalUrl = (url: string) => {
-    void Promise.resolve().then(() => updateAdapter.openUrl(url)).catch((error) => {
-      if (!mountedRef.current) return;
-      commitUpdateState({ ...updateStateRef.current, phase: "error", error: formatUpdateError(error) });
+    const sequence = ++linkSequenceRef.current;
+    void Promise.resolve().then(() => updateAdapter.openUrl(url)).then(() => {
+      if (mountedRef.current && linkSequenceRef.current === sequence) setLinkError(undefined);
+    }).catch((error) => {
+      if (!mountedRef.current || linkSequenceRef.current !== sequence) return;
+      setLinkError(`打开链接失败：${formatUpdateError(error)}`);
     });
   };
 
@@ -430,8 +442,13 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
           updateState={updateState}
           onCheckUpdate={() => { void runUpdateCheck(false); }}
           onStartUpdate={startUpdateDownload}
+          onRestartUpdate={restartIntoUpdate}
           onOpenGitHub={() => openExternalUrl(GITHUB_URL)}
           onOpenReleaseNotes={() => openExternalUrl(RELEASE_NOTES_URL)}
+          restartBusy={restartBusy}
+          restartError={restartError}
+          restartActionLabel={installedRef.current ? "再次重启" : restartError ? "重试安装" : "立即重启"}
+          linkError={linkError}
         />
       ) : (
         <main className="main-content">
@@ -468,6 +485,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
         <UpdateReadyDialog
           version={updateState.latestVersion ?? updateHandle.version}
           busy={restartBusy}
+          error={restartError}
+          actionLabel={installedRef.current ? "再次重启" : restartError ? "重试安装" : "立即重启"}
           onPostpone={() => setRestartDialogPostponed(true)}
           onRestart={restartIntoUpdate}
         />

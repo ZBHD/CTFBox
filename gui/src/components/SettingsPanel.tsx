@@ -40,8 +40,13 @@ interface LegacySettingsPanelProps extends BaseSettingsPanelProps {
   updateState?: undefined;
   onCheckUpdate?: undefined;
   onStartUpdate?: undefined;
+  onRestartUpdate?: undefined;
   onOpenGitHub?: undefined;
   onOpenReleaseNotes?: undefined;
+  restartBusy?: undefined;
+  restartError?: undefined;
+  restartActionLabel?: undefined;
+  linkError?: undefined;
 }
 
 interface ControlledSettingsPanelProps extends BaseSettingsPanelProps {
@@ -50,8 +55,13 @@ interface ControlledSettingsPanelProps extends BaseSettingsPanelProps {
   updateState: UpdateState;
   onCheckUpdate: () => void;
   onStartUpdate: () => void;
+  onRestartUpdate: () => void;
   onOpenGitHub: () => void;
   onOpenReleaseNotes: () => void;
+  restartBusy: boolean;
+  restartError: string | undefined;
+  restartActionLabel: string;
+  linkError: string | undefined;
 }
 
 type SettingsPanelProps = LegacySettingsPanelProps | ControlledSettingsPanelProps;
@@ -78,10 +88,22 @@ function VersionValue({ label, version, accent = false }: { label: string; versi
   );
 }
 
-function UpdateStatus({ state, onCheckUpdate, onStartUpdate }: {
+function UpdateStatus({
+  state,
+  onCheckUpdate,
+  onStartUpdate,
+  onRestartUpdate,
+  restartBusy,
+  restartError,
+  restartActionLabel,
+}: {
   state: UpdateState;
   onCheckUpdate: () => void;
   onStartUpdate: () => void;
+  onRestartUpdate: () => void;
+  restartBusy: boolean;
+  restartError: string | undefined;
+  restartActionLabel: string;
 }) {
   const isChecking = state.phase === "checking";
 
@@ -129,10 +151,23 @@ function UpdateStatus({ state, onCheckUpdate, onStartUpdate }: {
 
   if (state.phase === "ready") {
     return (
-      <div className="update-status update-status-ready" role="status">
-        <CheckCircle2 size={18} />
-        <span><strong>更新已准备好</strong><small>安装包已下载并通过校验，可按提示重启应用</small></span>
-      </div>
+      <>
+        <div className="update-status update-status-ready">
+          <div role="status">
+            <CheckCircle2 size={18} />
+            <span><strong>更新已准备好</strong><small>安装包已下载并通过校验，可随时重启应用</small></span>
+          </div>
+          <button
+            className="update-primary-action"
+            type="button"
+            disabled={restartBusy}
+            onClick={onRestartUpdate}
+          >
+            {restartActionLabel}
+          </button>
+        </div>
+        {restartError && <div className="update-inline-error" role="alert">{restartError}</div>}
+      </>
     );
   }
 
@@ -161,12 +196,28 @@ function UpdateStatus({ state, onCheckUpdate, onStartUpdate }: {
   );
 }
 
-function UpdateSettings({ state, onCheckUpdate, onStartUpdate, onOpenGitHub, onOpenReleaseNotes }: {
+function UpdateSettings({
+  state,
+  onCheckUpdate,
+  onStartUpdate,
+  onRestartUpdate,
+  onOpenGitHub,
+  onOpenReleaseNotes,
+  restartBusy,
+  restartError,
+  restartActionLabel,
+  linkError,
+}: {
   state: UpdateState;
   onCheckUpdate: () => void;
   onStartUpdate: () => void;
+  onRestartUpdate: () => void;
   onOpenGitHub: () => void;
   onOpenReleaseNotes: () => void;
+  restartBusy: boolean;
+  restartError: string | undefined;
+  restartActionLabel: string;
+  linkError: string | undefined;
 }) {
   return (
     <section className="settings-section settings-updates" aria-labelledby="settings-updates-title" hidden={false}>
@@ -204,11 +255,22 @@ function UpdateSettings({ state, onCheckUpdate, onStartUpdate, onOpenGitHub, onO
         </div>
       )}
 
-      <UpdateStatus state={state} onCheckUpdate={onCheckUpdate} onStartUpdate={onStartUpdate} />
+      <UpdateStatus
+        state={state}
+        onCheckUpdate={onCheckUpdate}
+        onStartUpdate={onStartUpdate}
+        onRestartUpdate={onRestartUpdate}
+        restartBusy={restartBusy}
+        restartError={restartError}
+        restartActionLabel={restartActionLabel}
+      />
 
       <div className="update-links" aria-label="版本相关链接">
-        <button type="button" onClick={onOpenGitHub}><Github size={15} />GitHub</button>
-        <button type="button" onClick={onOpenReleaseNotes}><FileText size={15} />更新日志</button>
+        <div className="update-link-actions">
+          <button type="button" onClick={onOpenGitHub}><Github size={15} />GitHub</button>
+          <button type="button" onClick={onOpenReleaseNotes}><FileText size={15} />更新日志</button>
+        </div>
+        {linkError && <div className="update-inline-error" role="alert">{linkError}</div>}
       </div>
     </section>
   );
@@ -271,8 +333,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
             state={props.updateState}
             onCheckUpdate={props.onCheckUpdate}
             onStartUpdate={props.onStartUpdate}
+            onRestartUpdate={props.onRestartUpdate}
             onOpenGitHub={props.onOpenGitHub}
             onOpenReleaseNotes={props.onOpenReleaseNotes}
+            restartBusy={props.restartBusy}
+            restartError={props.restartError}
+            restartActionLabel={props.restartActionLabel}
+            linkError={props.linkError}
           />
         )}
       </div>

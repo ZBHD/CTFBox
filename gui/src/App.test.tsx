@@ -150,7 +150,7 @@ afterEach(() => {
 });
 
 describe("App update integration", () => {
-  it("survives the StrictMode development mount-cleanup-remount lifecycle", async () => {
+  it("survives an explicitly simulated StrictMode cleanup and remount", async () => {
     const firstCheck = deferred<UpdateResult>();
     const discardedUpdate = makeHandle("0.2.0");
     const activeUpdate = makeHandle("0.3.0");
@@ -165,7 +165,7 @@ describe("App update integration", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     // React test renderer 18 marks strict roots but does not replay passive effects.
-    // Explicitly remount the real StrictMode tree to reproduce ReactDOM's dev cleanup cycle.
+    // Explicitly cleanup and remount the StrictMode tree to simulate ReactDOM's dev cycle.
     const firstMount = renderStrictApp(updateAdapter);
     expect(checkLatest).toHaveBeenCalledOnce();
     act(() => firstMount.unmount());
@@ -229,6 +229,10 @@ describe("App update integration", () => {
   it("downloads only after user action, reports progress, and postpones the ready dialog for this session", async () => {
     const update = makeHandle();
     const gate = deferred<void>();
+    const relaunch = vi.fn(async () => undefined);
+    const installAndRelaunch = vi.fn(async (_update: UpdateHandle, options?: { relaunch?: () => Promise<void> }) => {
+      await options?.relaunch?.();
+    });
     const downloadUpdate = vi.fn(async (
       ownedUpdate: UpdateHandle,
       previousState: UpdateState,
@@ -243,6 +247,8 @@ describe("App update integration", () => {
     const renderer = renderApp(adapter({
       checkLatest: vi.fn(async () => available(update)),
       downloadUpdate,
+      installAndRelaunch,
+      relaunch,
     }));
     await flush();
     expect(downloadUpdate).not.toHaveBeenCalled();
@@ -263,6 +269,11 @@ describe("App update integration", () => {
     act(() => button(renderer.root, "外观").props.onClick());
     act(() => button(renderer.root, "版本更新").props.onClick());
     expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+    act(() => button(renderer.root, "立即重启").props.onClick());
+    await flush();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+    expect(installAndRelaunch).toHaveBeenCalledOnce();
+    expect(relaunch).toHaveBeenCalledOnce();
   });
 
   it("retries only relaunch after installation succeeded and resets the busy guard after failure", async () => {
@@ -290,21 +301,39 @@ describe("App update integration", () => {
     expect(installAndRelaunch).toHaveBeenCalledOnce();
     await act(async () => installation.reject(new UpdateRelaunchError(new Error("restart failed"))));
 
-    act(() => button(renderer.root, "立即重启").props.onClick());
+    expect(textContent(renderer.root)).toContain("重启应用失败");
+    expect(textContent(renderer.root)).toContain("再次重启");
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("ready");
+
+    act(() => button(renderer.root, "再次重启").props.onClick());
     await flush();
-    act(() => button(renderer.root, "立即重启").props.onClick());
+    expect(textContent(renderer.root)).toContain("重启应用失败");
+    act(() => button(renderer.root, "再次重启").props.onClick());
     await flush();
 
     expect(installAndRelaunch).toHaveBeenCalledOnce();
     expect(relaunch).toHaveBeenCalledTimes(2);
   });
 
-  it("shows an install error, releases busy state, and retains the handle for a user retry", async () => {
+  it("keeps an install failure ready and retries installation with the downloaded handle", async () => {
     const update = makeHandle();
-    const installAndRelaunch = vi.fn(() => { throw new Error("installer failed"); });
+    const relaunch = vi.fn(async () => undefined);
+    const installAndRelaunch = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("installer failed"); })
+      .mockImplementationOnce(async (_update: UpdateHandle, options?: { relaunch?: () => Promise<void> }) => {
+        await options?.relaunch?.();
+      });
+    const downloadUpdate = vi.fn(async (ownedUpdate: UpdateHandle, previousState: UpdateState, onState?: (state: UpdateState) => void) => {
+      const state = { ...previousState, phase: "ready" as const };
+      onState?.(state);
+      return { state, update: ownedUpdate };
+    });
     const renderer = renderApp(adapter({
       checkLatest: vi.fn(async () => available(update)),
+      downloadUpdate,
       installAndRelaunch,
+      relaunch,
     }));
     await flush();
     act(() => renderer.root.findByProps({ "aria-label": "发现新版本 v0.2.0" }).props.onClick());
@@ -314,9 +343,19 @@ describe("App update integration", () => {
     act(() => button(renderer.root, "立即重启").props.onClick());
     await flush();
 
+    expect(textContent(renderer.root)).toContain("安装更新失败");
     expect(textContent(renderer.root)).toContain("installer failed");
-    expect(textContent(renderer.root)).toContain("重新下载");
+    expect(textContent(renderer.root)).toContain("重试安装");
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("ready");
     expect(update.close).not.toHaveBeenCalled();
+
+    act(() => button(renderer.root, "重试安装").props.onClick());
+    await flush();
+    expect(installAndRelaunch).toHaveBeenCalledTimes(2);
+    expect(relaunch).toHaveBeenCalledOnce();
+    expect(downloadUpdate).toHaveBeenCalledOnce();
+    expect(update.close).not.toHaveBeenCalled();
+    expect(textContent(renderer.root)).toContain("再次重启");
   });
 
   it("does not install twice when a successful relaunch call returns without exiting", async () => {
@@ -335,7 +374,10 @@ describe("App update integration", () => {
 
     act(() => button(renderer.root, "立即重启").props.onClick());
     await flush();
-    act(() => button(renderer.root, "立即重启").props.onClick());
+    expect(textContent(renderer.root)).toContain("再次重启");
+    expect(textContent(renderer.root)).toContain("应用仍在运行");
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
+    act(() => button(renderer.root, "再次重启").props.onClick());
     await flush();
 
     expect(installAndRelaunch).toHaveBeenCalledOnce();
@@ -384,6 +426,92 @@ describe("App update integration", () => {
     expect(localStorage.removeItem).not.toHaveBeenCalled();
     expect(localStorage.setItem).toHaveBeenCalledWith("ctfbox.theme", "light");
     expect(localStorage.setItem).toHaveBeenCalledWith("ctfbox.flagPrefixes", "flag, CTF");
+  });
+
+  it("isolates synchronous and asynchronous link failures from an available update", async () => {
+    const update = makeHandle();
+    const openUrl = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("sync offline"); })
+      .mockRejectedValueOnce(new Error("async offline"))
+      .mockResolvedValueOnce(undefined);
+    const renderer = renderApp(adapter({
+      checkLatest: vi.fn(async () => available(update)),
+      openUrl,
+    }));
+    await flush();
+    act(() => renderer.root.findByProps({ "aria-label": "发现新版本 v0.2.0" }).props.onClick());
+
+    act(() => button(renderer.root, "GitHub").props.onClick());
+    await flush();
+    expect(textContent(renderer.root.findByProps({ role: "alert" }))).toContain("sync offline");
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("available");
+    expect(update.close).not.toHaveBeenCalled();
+
+    act(() => button(renderer.root, "更新日志").props.onClick());
+    await flush();
+    expect(textContent(renderer.root.findByProps({ role: "alert" }))).toContain("async offline");
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("available");
+
+    act(() => button(renderer.root, "GitHub").props.onClick());
+    await flush();
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("available");
+    expect(update.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps a ready update restartable when opening a link fails", async () => {
+    const update = makeHandle();
+    const renderer = renderApp(adapter({
+      checkLatest: vi.fn(async () => available(update)),
+      openUrl: vi.fn(async () => { throw new Error("link blocked"); }),
+    }));
+    await flush();
+    act(() => renderer.root.findByProps({ "aria-label": "发现新版本 v0.2.0" }).props.onClick());
+    act(() => button(renderer.root, "更新到 v0.2.0").props.onClick());
+    await flush();
+    act(() => button(renderer.root, "稍后重启").props.onClick());
+
+    act(() => button(renderer.root, "GitHub").props.onClick());
+    await flush();
+    expect(textContent(renderer.root.findByProps({ role: "alert" }))).toContain("link blocked");
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("ready");
+    expect(textContent(renderer.root)).toContain("立即重启");
+    expect(update.close).not.toHaveBeenCalled();
+  });
+
+  it("ignores late download progress after unmount and closes the owned handle once", async () => {
+    const update = makeHandle();
+    const downloadResult = deferred<UpdateResult>();
+    let reportState: ((state: UpdateState) => void) | undefined;
+    const downloadUpdate = vi.fn((
+      _ownedUpdate: UpdateHandle,
+      _previousState: UpdateState,
+      onState?: (state: UpdateState) => void,
+    ) => {
+      reportState = onState;
+      return downloadResult.promise;
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const renderer = renderApp(adapter({
+      checkLatest: vi.fn(async () => available(update)),
+      downloadUpdate,
+    }));
+    await flush();
+    act(() => renderer.root.findByProps({ "aria-label": "发现新版本 v0.2.0" }).props.onClick());
+    act(() => button(renderer.root, "更新到 v0.2.0").props.onClick());
+    await flush();
+
+    act(() => renderer.unmount());
+    mounted.splice(mounted.indexOf(renderer), 1);
+    await flush();
+    act(() => reportState?.({ phase: "downloading", downloadedBytes: 64, totalBytes: 128 }));
+    await act(async () => downloadResult.resolve({
+      state: { phase: "ready", downloadedBytes: 128, totalBytes: 128 },
+      update,
+    }));
+
+    expect(update.close).toHaveBeenCalledOnce();
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it("closes a replaced handle once and retains the active handle until unmount", async () => {

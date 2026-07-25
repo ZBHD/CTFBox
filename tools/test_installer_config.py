@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import re
 import unittest
@@ -5,6 +7,16 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def workflow_step(workflow: str, name: str) -> str:
+    match = re.search(
+        rf"(?ms)^      - name: {re.escape(name)}\r?\n.*?(?=^      - name: |\Z)",
+        workflow,
+    )
+    if match is None:
+        raise AssertionError(f"workflow step missing: {name}")
+    return match.group(0)
 
 
 class InstallerConfigTests(unittest.TestCase):
@@ -33,7 +45,26 @@ class InstallerConfigTests(unittest.TestCase):
             ["https://github.com/ZBHD/CTFBox/releases/latest/download/latest.json"],
         )
         self.assertEqual(updater["windows"]["installMode"], "quiet")
-        self.assertTrue(updater["pubkey"].strip())
+        try:
+            public_key_file = base64.b64decode(
+                updater["pubkey"], validate=True
+            ).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError) as error:
+            self.fail(f"updater pubkey is not an outer-base64 minisign public key: {error}")
+        public_key_lines = public_key_file.splitlines()
+        self.assertEqual(len(public_key_lines), 2)
+        self.assertRegex(
+            public_key_lines[0],
+            r"^untrusted comment: minisign public key: [0-9A-Fa-f]{16}$",
+        )
+        try:
+            public_key_payload = base64.b64decode(
+                public_key_lines[1], validate=True
+            )
+        except binascii.Error as error:
+            self.fail(f"minisign public key payload is not base64: {error}")
+        self.assertEqual(len(public_key_payload), 42)
+        self.assertIn(public_key_payload[:2], (b"Ed", b"ED"))
 
         for permission in (
             "updater:default",
@@ -42,13 +73,7 @@ class InstallerConfigTests(unittest.TestCase):
         ):
             self.assertIn(permission, capability["permissions"])
 
-        build_step_match = re.search(
-            r"(?ms)^      - name: 构建安装包\r?\n.*?"
-            r"(?=^      - name: |\Z)",
-            workflow,
-        )
-        self.assertIsNotNone(build_step_match, "build workflow step missing")
-        build_step = build_step_match.group(0)
+        build_step = workflow_step(workflow, "构建安装包")
         self.assertRegex(
             build_step,
             re.compile(
@@ -70,44 +95,85 @@ class InstallerConfigTests(unittest.TestCase):
             ),
         )
 
-        release_step_match = re.search(
-            r"(?ms)^      - name: 发布到 GitHub Release\r?\n.*?"
-            r"(?=^      - name: |\Z)",
-            workflow,
+        verification_step = workflow_step(workflow, "验证更新签名")
+        self.assertLess(workflow.index(build_step), workflow.index(verification_step))
+        self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY", verification_step)
+        self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", verification_step)
+        self.assertRegex(
+            verification_step,
+            r'(?m)^          \$signatureFile\s*=\s*"\$\(\$updater\.FullName\)\.sig"$',
         )
-        self.assertIsNotNone(release_step_match, "release workflow step missing")
-        release_step = release_step_match.group(0)
-        release_command_match = re.search(
-            r"(?m)^          gh release create\b[^\r\n]*$",
+        self.assertRegex(
+            verification_step,
+            r"(?m)^          \$signatureAsset\s*=\s*Get-Item "
+            r"-LiteralPath \$signatureFile -ErrorAction Stop$",
+        )
+        for path_env in (
+            "CTFBOX_UPDATER_ARCHIVE",
+            "CTFBOX_UPDATER_SIGNATURE",
+            "CTFBOX_UPDATER_PUBLIC_KEY",
+        ):
+            self.assertRegex(
+                verification_step,
+                rf"(?m)^          \$env:{path_env}\s*=\s*",
+            )
+        self.assertRegex(
+            verification_step,
+            r"cargo test --locked --manifest-path "
+            r'"gui/src-tauri/Cargo\.toml" --test updater_signature -- '
+            r"--ignored --exact signed_updater_archive_matches_embedded_public_key",
+        )
+
+        release_step = workflow_step(workflow, "发布到 GitHub Release")
+        self.assertLess(workflow.index(verification_step), workflow.index(release_step))
+        self.assertRegex(
+            release_step,
+            r'(?m)^          \$signatureFile\s*=\s*"\$\(\$updater\.FullName\)\.sig"$',
+        )
+        self.assertRegex(
+            release_step,
+            r"(?m)^          \$signatureAsset\s*=\s*Get-Item "
+            r"-LiteralPath \$signatureFile$",
+        )
+        self.assertRegex(
+            release_step,
+            r"(?m)^          \$signature\s*=\s*\(Get-Content "
+            r"-LiteralPath \$signatureFile -Raw\)\.Trim\(\)$",
+        )
+        self.assertIn(
+            '$downloadUrl = "$repositoryUrl/releases/download/$tag/$($updater.Name)"',
             release_step,
         )
-        self.assertIsNotNone(release_command_match, "gh release create command missing")
-        release_command = release_command_match.group(0)
-        release_asset_arguments = re.split(
-            r"\s--[A-Za-z]", release_command, maxsplit=1
-        )[0]
 
-        assignment_scope = release_step[: release_command_match.start()]
-        updater_archive_match = re.search(
-            r'(?m)^          (\$[A-Za-z_]\w*)\s*=\s*Get-Item\s+'
-            r'"[^"\r\n]*/\*\.nsis\.zip"\s*$',
-            assignment_scope,
-        )
-        self.assertIsNotNone(
-            updater_archive_match, "updater archive assignment missing"
+        expected_assets = (
+            "$asset.FullName",
+            '"SHA256SUMS.txt"',
+            "$updater.FullName",
+            "$signatureAsset.FullName",
+            '"latest.json"',
         )
         self.assertRegex(
-            release_asset_arguments,
+            release_step,
             re.compile(
-                rf"(?<!\S){re.escape(updater_archive_match.group(1))}"
-                r"\.FullName(?=\s|$)",
-                re.IGNORECASE,
+                r"if \(\$queryExitCode -eq 0\) \{.*?gh release upload\b.*?"
+                r"\} else \{.*?gh release create\b",
+                re.DOTALL,
             ),
         )
-        self.assertRegex(
-            release_asset_arguments,
-            r'(?<!\S)"latest\.json"(?=\s|$)',
-        )
+        for command_name in ("upload", "create"):
+            command_match = re.search(
+                rf"(?m)^\s{{10,}}gh release {command_name}\b[^\r\n]*$",
+                release_step,
+            )
+            self.assertIsNotNone(
+                command_match, f"gh release {command_name} command missing"
+            )
+            command = command_match.group(0)
+            for asset in expected_assets:
+                self.assertIn(asset, command)
+            self.assertNotRegex(command, r"setup\.exe\.sig")
+            required_mode = "--clobber" if command_name == "upload" else "--draft"
+            self.assertIn(required_mode, command)
 
     def test_nsis_supports_custom_directory_and_creates_desktop_shortcut(self):
         config_path = ROOT / "gui" / "src-tauri" / "tauri.conf.json"

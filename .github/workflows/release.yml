@@ -71,6 +71,31 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --dir gui build
 
+      - name: 验证更新签名
+        shell: pwsh
+        run: |
+          $updaters = @(Get-ChildItem -LiteralPath "gui/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -File)
+          if ($updaters.Count -ne 1) { throw "更新归档数量异常：$($updaters.Count)" }
+          $updater = $updaters[0]
+          $signatureFile = "$($updater.FullName).sig"
+          $signatureAsset = Get-Item -LiteralPath $signatureFile -ErrorAction Stop
+          $config = Get-Content -LiteralPath "gui/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          $publicKeyFile = Join-Path $env:RUNNER_TEMP "ctfbox-updater.pub"
+          $decodedSignatureFile = Join-Path $env:RUNNER_TEMP "ctfbox-updater.sig"
+          try {
+            $publicKeyBytes = [Convert]::FromBase64String($config.plugins.updater.pubkey)
+            $signatureBytes = [Convert]::FromBase64String((Get-Content -LiteralPath $signatureFile -Raw).Trim())
+          } catch {
+            throw "更新签名材料不是有效的 Base64：$($_.Exception.Message)"
+          }
+          [IO.File]::WriteAllBytes($publicKeyFile, $publicKeyBytes)
+          [IO.File]::WriteAllBytes($decodedSignatureFile, $signatureBytes)
+          $env:CTFBOX_UPDATER_ARCHIVE = $updater.FullName
+          $env:CTFBOX_UPDATER_SIGNATURE = $decodedSignatureFile
+          $env:CTFBOX_UPDATER_PUBLIC_KEY = $publicKeyFile
+          cargo test --locked --manifest-path "gui/src-tauri/Cargo.toml" --test updater_signature -- --ignored --exact signed_updater_archive_matches_embedded_public_key
+          if ($LASTEXITCODE -ne 0) { throw "更新签名验证失败" }
+
       - name: 发布到 GitHub Release
         shell: pwsh
         env:
@@ -81,7 +106,8 @@ jobs:
           $updater = Get-Item "gui/src-tauri/target/release/bundle/nsis/*.nsis.zip"
           if (@($asset).Count -ne 1) { throw "安装包数量异常：$(@($asset).Count)" }
           if (@($updater).Count -ne 1) { throw "更新归档数量异常：$(@($updater).Count)" }
-          $signatureAsset = Get-Item "$($updater.FullName).sig"
+          $signatureFile = "$($updater.FullName).sig"
+          $signatureAsset = Get-Item -LiteralPath $signatureFile
           $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
           "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
           $tag = $env:GITHUB_REF_NAME
@@ -90,7 +116,7 @@ jobs:
             throw "发布版本输出无效"
           }
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          $signature = (Get-Content -LiteralPath $signatureAsset.FullName -Raw).Trim()
+          $signature = (Get-Content -LiteralPath $signatureFile -Raw).Trim()
           $repositoryUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
           $downloadUrl = "$repositoryUrl/releases/download/$tag/$($updater.Name)"
           $manifest = [ordered]@{

@@ -1,4 +1,4 @@
-import { Check, Download, FileArchive, FileText } from "lucide-react";
+import { Check, Copy, Download, FileArchive, FileText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { bytesToHexPreview } from "../../../lib/lsbFormats";
 import type { LsbCandidate, LsbExtractedFile, LsbLocalAnalysis } from "../../../lib/lsbTypes";
@@ -36,6 +36,15 @@ function safeBaseName(fileName?: string) {
   return (fileName ?? "lsb-result").replace(/\.[^.]+$/, "").replace(/[^a-z0-9._-]+/gi, "-") || "lsb-result";
 }
 
+function flagFromEvidence(evidence: readonly string[]) {
+  const prefixes = ["发现 Flag：", "疑似 Flag：", "归档内发现 Flag：", "归档内发现疑似 Flag："];
+  for (const item of evidence) {
+    const prefix = prefixes.find((candidate) => item.startsWith(candidate));
+    if (prefix) return item.slice(prefix.length).trim();
+  }
+  return undefined;
+}
+
 function FileTree({ file, baseName, onExport }: { file: LsbExtractedFile; baseName: string; onExport: LsbResultsPanelProps["onExport"] }) {
   return <li className="lsb-file-node">
     <div>{file.children ? <FileArchive size={13} /> : <FileText size={13} />}<span><strong>{file.name}</strong><small>{file.mediaType} · {file.bytes.length} 字节{file.offset ? ` · 偏移 ${file.offset}` : ""}</small></span><button type="button" className="icon-action" title={`导出 ${file.name}`} disabled={file.bytes.length === 0} onClick={() => onExport(file.bytes, file.name || `${baseName}.${extension(file.mediaType)}`, file.mediaType)}><Download size={13} /></button></div>
@@ -47,6 +56,7 @@ function FileTree({ file, baseName, onExport }: { file: LsbExtractedFile; baseNa
 
 export function LsbResultsPanel({ analysis, onSelect, onApply, onExport }: LsbResultsPanelProps) {
   const [tab, setTab] = useState<"text" | "hex" | "files">("text");
+  const [copiedFlag, setCopiedFlag] = useState<string>();
   const selected = useMemo(
     () => analysis.candidates.find((candidate) => candidate.id === analysis.selectedId) ?? analysis.candidates[0],
     [analysis.candidates, analysis.selectedId],
@@ -61,6 +71,8 @@ export function LsbResultsPanel({ analysis, onSelect, onApply, onExport }: LsbRe
   const rank = analysis.candidates.indexOf(selected) + 1;
   const text = selected.preview;
   const exportName = `${baseName}-rank${rank}.${extension(selected.mediaType)}`;
+  const detectedFlag = flagFromEvidence(selected.evidence);
+  const flagCopied = detectedFlag !== undefined && copiedFlag === detectedFlag;
 
   return <div className="lsb-results-layout">
     <div className="lsb-candidate-list" aria-label="自动分析候选">
@@ -74,6 +86,10 @@ export function LsbResultsPanel({ analysis, onSelect, onApply, onExport }: LsbRe
       <header>
         <div><strong>{selected.mediaType}</strong><span>{selected.bytes.length} 字节 · {sourceSummary(selected)}</span></div>
         <div className="lsb-result-actions">
+          {detectedFlag && <button type="button" className="icon-action" title={flagCopied ? "已复制 Flag" : "复制疑似 Flag"} aria-label={flagCopied ? "已复制 Flag" : "复制疑似 Flag"} onClick={async () => {
+            await navigator.clipboard.writeText(detectedFlag);
+            setCopiedFlag(detectedFlag);
+          }}>{flagCopied ? <Check size={13} /> : <Copy size={13} />}</button>}
           <button type="button" className="secondary-action" title="应用参数" onClick={() => onApply(selected)}><Check size={13} />应用参数</button>
           <button type="button" className="icon-action" title="导出原始字节" onClick={() => onExport(selected.bytes, exportName, selected.mediaType)}><Download size={13} /></button>
         </div>

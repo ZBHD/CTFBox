@@ -74,6 +74,25 @@ describe("LsbResultsPanel", () => {
     expect(onExport).toHaveBeenCalledWith(candidate.bytes, expect.stringContaining("challenge"), "application/zip");
   });
 
+  it("copies the complete detected flag from evidence", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const renderer = create(<LsbResultsPanel analysis={analysis()} onSelect={() => undefined} onApply={() => undefined} onExport={() => undefined} />);
+
+    await act(async () => renderer.root.findByProps({ "aria-label": "复制疑似 Flag" }).props.onClick());
+
+    expect(writeText).toHaveBeenCalledWith("ctfshow{result}");
+    expect(renderer.root.findAllByProps({ "aria-label": "已复制 Flag" })).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("hides the copy command when no flag evidence exists", () => {
+    const withoutFlag = { ...candidate, evidence: ["连续可打印文本 16 字节"] };
+    const renderer = create(<LsbResultsPanel analysis={{ ...analysis(), candidates: [withoutFlag] }} onSelect={() => undefined} onApply={() => undefined} onExport={() => undefined} />);
+
+    expect(renderer.root.findAllByProps({ "aria-label": "复制疑似 Flag" })).toHaveLength(0);
+  });
+
   it("renders a useful empty and failed state", () => {
     const empty = renderToStaticMarkup(<LsbResultsPanel analysis={{ ...analysis(), status: "idle", candidates: [], selectedId: undefined }} onSelect={() => undefined} onApply={() => undefined} onExport={() => undefined} />);
     const failed = renderToStaticMarkup(<LsbResultsPanel analysis={{ ...analysis(), status: "failed", candidates: [], error: "图片损坏" }} onSelect={() => undefined} onApply={() => undefined} onExport={() => undefined} />);

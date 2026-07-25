@@ -8,6 +8,8 @@ export interface CommandRun {
   status: TaskStatus;
   output: string;
   collapsed: boolean;
+  automationJobId?: string;
+  automationLabel?: string;
 }
 
 export interface StructuredFinding {
@@ -67,7 +69,14 @@ export function appendOutput(state: TaskState, runId: string, chunk: string): Ta
 
 export function finishRun(state: TaskState, runId: string, status: "completed" | "failed" | "stopped"): TaskState {
   const runs = state.runs.map((run) => run.id === runId ? { ...run, status } : run);
-  return { ...state, runs, status };
+  const taskStatus = runs.some((run) => run.status === "running")
+    ? "running"
+    : runs.some((run) => run.status === "failed")
+      ? "failed"
+      : runs.some((run) => run.status === "stopped")
+        ? "stopped"
+        : "completed";
+  return { ...state, runs, status: taskStatus };
 }
 
 function findingKey(finding: StructuredFinding) {

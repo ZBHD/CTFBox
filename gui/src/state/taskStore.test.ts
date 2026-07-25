@@ -79,6 +79,24 @@ describe("in-memory task state", () => {
     expect(finishRun(task, "run-1", "failed").status).toBe("failed");
   });
 
+  it("keeps the task running until every concurrent process has exited", () => {
+    const task = appendRun(appendRun(createTask("sqlmap"), run), { ...run, id: "run-2" });
+
+    const afterFirstExit = finishRun(task, "run-1", "completed");
+
+    expect(afterFirstExit.status).toBe("running");
+    expect(finishRun(afterFirstExit, "run-2", "completed").status).toBe("completed");
+  });
+
+  it("keeps a failed concurrent run visible after another run completes", () => {
+    const task = appendRun(appendRun(createTask("sqlmap"), run), { ...run, id: "run-2" });
+
+    const afterFailure = finishRun(task, "run-1", "failed");
+
+    expect(afterFailure.status).toBe("running");
+    expect(finishRun(afterFailure, "run-2", "completed").status).toBe("failed");
+  });
+
   it("applies output and exit messages from the tool channel", () => {
     const task = appendRun(createTask("sqlmap"), run);
     const withOutput = applyToolStreamEvent(task, {

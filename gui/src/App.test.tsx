@@ -4,7 +4,9 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { type AppUpdateAdapter } from "./App";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { ToolRail } from "./components/ToolRail";
 import { ModeControls } from "./components/workbench/ModeControls";
+import { AutomationControls } from "./components/workbench/AutomationControls";
 import { ParameterPanel } from "./components/workbench/ParameterPanel";
 import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import type { ToolStreamEvent } from "./state/taskStore";
@@ -661,5 +663,107 @@ describe("App update integration", () => {
       "app",
     ]);
     expect(textContent(renderer.root)).toContain("available databases [1]");
+  });
+
+  it("automatically advances SQLmap discovery into table enumeration and data export", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(AutomationControls).props.onStart());
+    await flush();
+
+    const runCalls = () => invokeMock.mock.calls.filter(([command]) => command === "run_tool");
+    expect(runCalls()).toHaveLength(1);
+    const first = runCalls()[0][1] as { request: { runId: string; arguments: string[] }; onEvent: { onmessage?: (event: ToolStreamEvent) => void } };
+    expect(first.request.arguments).toEqual(["--url", "TARGET_URL", "--dbs", "--threads", "5", "--batch"]);
+
+    act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "sstimap" }));
+
+    act(() => {
+      first.onEvent.onmessage?.({ event: "analysis", runId: first.request.runId, findings: [{ kind: "database", value: "app" }] });
+      first.onEvent.onmessage?.({ event: "exit", runId: first.request.runId, status: "completed", code: 0 });
+    });
+    await flush();
+    expect(runCalls()).toHaveLength(2);
+    const second = runCalls()[1][1] as { request: { runId: string; arguments: string[] }; onEvent: { onmessage?: (event: ToolStreamEvent) => void } };
+    expect(second.request.arguments).toEqual(["--url", "TARGET_URL", "--tables", "-D", "app", "--threads", "5", "--batch"]);
+
+    act(() => {
+      second.onEvent.onmessage?.({ event: "analysis", runId: second.request.runId, findings: [{ kind: "table", value: "flags", database: "app" }] });
+      second.onEvent.onmessage?.({ event: "exit", runId: second.request.runId, status: "completed", code: 0 });
+    });
+    await flush();
+    expect(runCalls()).toHaveLength(3);
+    expect((runCalls()[2][1] as { request: { arguments: string[] } }).request.arguments).toEqual([
+      "--url", "TARGET_URL", "-D", "app", "-T", "flags", "--dump", "--threads", "5", "--batch",
+    ]);
+  });
+
+  it("automatically advances SSTImap discovery into bounded flag searches", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+    act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "sstimap" }));
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(AutomationControls).props.onStart());
+    await flush();
+
+    const runCalls = () => invokeMock.mock.calls.filter(([command]) => command === "run_tool");
+    expect(runCalls()).toHaveLength(1);
+    const first = runCalls()[0][1] as { request: { runId: string; arguments: string[] }; onEvent: { onmessage?: (event: ToolStreamEvent) => void } };
+    expect(first.request.arguments).toEqual(["-u", "TARGET_URL", "--no-color"]);
+
+    act(() => {
+      first.onEvent.onmessage?.({
+        event: "analysis",
+        runId: first.request.runId,
+        findings: [
+          { kind: "engine", value: "Jinja2" },
+          { kind: "technique", value: "R" },
+          { kind: "capability", value: "Shell command execution" },
+        ],
+      });
+      first.onEvent.onmessage?.({ event: "exit", runId: first.request.runId, status: "completed", code: 0 });
+    });
+    await flush();
+
+    expect(runCalls()).toHaveLength(4);
+    const searches = runCalls().slice(1).map(([, payload]) => (payload as { request: { arguments: string[] } }).request.arguments);
+    expect(searches).toHaveLength(3);
+    expect(searches.every((argumentsList) => argumentsList.slice(0, 6).join("\u0000") === ["-u", "TARGET_URL", "-e", "Jinja2", "-r", "R"].join("\u0000"))).toBe(true);
+    expect(searches.every((argumentsList) => argumentsList.includes("-S") && argumentsList.includes("--no-color"))).toBe(true);
+  });
+
+  it("stops the automation queue when the shared stop control is used", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(AutomationControls).props.onStart());
+    await flush();
+    const runCalls = () => invokeMock.mock.calls.filter(([command]) => command === "run_tool");
+    const first = runCalls()[0][1] as { request: { runId: string }; onEvent: { onmessage?: (event: ToolStreamEvent) => void } };
+
+    act(() => renderer.root.findByType(ModeControls).props.onRun());
+    act(() => {
+      first.onEvent.onmessage?.({ event: "analysis", runId: first.request.runId, findings: [{ kind: "database", value: "app" }] });
+      first.onEvent.onmessage?.({ event: "exit", runId: first.request.runId, status: "stopped", code: null });
+    });
+    await flush();
+
+    expect(runCalls()).toHaveLength(1);
   });
 });

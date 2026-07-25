@@ -23,7 +23,9 @@ class InstallerConfigTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIs(config["bundle"]["createUpdaterArtifacts"], True)
+        self.assertEqual(
+            config["bundle"]["createUpdaterArtifacts"], "v1Compatible"
+        )
 
         updater = config["plugins"]["updater"]
         self.assertEqual(
@@ -54,6 +56,16 @@ class InstallerConfigTests(unittest.TestCase):
                 r"(?:^          [A-Za-z_][A-Za-z0-9_]*:[^\r\n]*\r?\n)*?"
                 r"^          TAURI_SIGNING_PRIVATE_KEY: "
                 r"\$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}\r?$",
+                re.MULTILINE,
+            ),
+        )
+        self.assertRegex(
+            build_step,
+            re.compile(
+                r"^        env:\r?\n"
+                r"(?:^          [A-Za-z_][A-Za-z0-9_]*:[^\r\n]*\r?\n)*?"
+                r"^          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "
+                r"\$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY_PASSWORD \}\}\r?$",
                 re.MULTILINE,
             ),
         )

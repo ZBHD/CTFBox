@@ -22,6 +22,15 @@ describe("MiscWorkbench", () => {
     expect(html).not.toContain("等待分析适配器返回结果");
   });
 
+  it("renders the dedicated image and file steganography workbench", () => {
+    const html = renderMode("image");
+    expect(html).toContain("图片 / 文件隐写");
+    expect(html).toContain("文件结构");
+    expect(html).toContain("二维 FFT");
+    expect(html).toContain("雕刻文件");
+    expect(html).not.toContain("等待分析适配器返回结果");
+  });
+
   it("renders audio analysis controls", () => {
     const html = renderMode("audio");
     expect(html).toContain("波形");

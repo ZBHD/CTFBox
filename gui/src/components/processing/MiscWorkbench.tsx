@@ -2,7 +2,9 @@ import { Download, FileAudio, FileImage, FileUp, Play, RotateCcw, ScanSearch } f
 import type { ChangeEvent, ReactNode } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
 import type { LocalAnalysisState, LsbLocalAnalysis } from "../../lib/lsbTypes";
+import type { StegoLocalAnalysis } from "../../lib/stegoTypes";
 import { LsbWorkbench } from "./LsbWorkbench";
+import { StegoWorkbench } from "./StegoWorkbench";
 
 interface MiscWorkbenchProps {
   mode: string;
@@ -44,6 +46,7 @@ function OptionRow({ title, description, active, onClick }: { title: string; des
 
 export function MiscWorkbench({ mode, parameters, onChange, onClear, analysis, flagPrefixes = ["flag", "CTF"], flagCaseSensitive = false, flagEnabled = true, onAnalysisChange = () => undefined }: MiscWorkbenchProps) {
   if (mode === "lsb") return <LsbWorkbench analysis={analysis as LsbLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
+  if (mode === "image") return <StegoWorkbench analysis={analysis as StegoLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
   const meta = MODE_META[mode] ?? MODE_META.image;
   const fileName = String(parameters.fileName ?? "");
   const dataUrl = String(parameters.dataUrl ?? "");

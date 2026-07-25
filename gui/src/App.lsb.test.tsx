@@ -5,6 +5,8 @@ import { ToolRail } from "./components/ToolRail";
 import { MiscWorkbench } from "./components/processing/MiscWorkbench";
 import { DEFAULT_LSB_PARAMETERS } from "./lib/lsbEngine";
 import type { LsbLocalAnalysis } from "./lib/lsbTypes";
+import { DEFAULT_STEGO_OPTIONS } from "./lib/stegoAnalyzer";
+import type { StegoLocalAnalysis } from "./lib/stegoTypes";
 
 vi.mock("@tauri-apps/api/core", () => ({
   Channel: class {
@@ -60,6 +62,10 @@ function result(): LsbLocalAnalysis {
   };
 }
 
+function stegoResult(): StegoLocalAnalysis {
+  return { kind: "stego", status: "completed", fileName: "evidence.jpg", options: { ...DEFAULT_STEGO_OPTIONS }, selectedTab: "dct", report: { format: "JPEG", findings: [], sections: [], metadata: [], strings: [], visuals: [], carvedFiles: [] } };
+}
+
 describe("App LSB task integration", () => {
   it("isolates, restores and clears structured LSB state by selection key", () => {
     const renderer = create(<App updateAdapter={adapter()} />);
@@ -91,5 +97,19 @@ describe("App LSB task integration", () => {
     expect(workbench.props.flagPrefixes).toEqual(["flag", "CTF"]);
     expect(workbench.props.flagCaseSensitive).toBe(false);
     expect(workbench.props.flagEnabled).toBe(true);
+  });
+
+  it("isolates image and file steganography reports from LSB tasks", () => {
+    const renderer = create(<App updateAdapter={adapter()} />);
+    mounted.push(renderer);
+    act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "misc", mode: "image" }));
+    let workbench = renderer.root.findByType(MiscWorkbench);
+    act(() => workbench.props.onAnalysisChange(stegoResult()));
+    expect(renderer.root.findByType(MiscWorkbench).props.analysis).toMatchObject({ kind: "stego", fileName: "evidence.jpg" });
+    act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "misc", mode: "lsb" }));
+    expect(renderer.root.findByType(MiscWorkbench).props.analysis).toBeUndefined();
+    act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "misc", mode: "image" }));
+    workbench = renderer.root.findByType(MiscWorkbench);
+    expect(workbench.props.analysis).toMatchObject({ kind: "stego", selectedTab: "dct" });
   });
 });

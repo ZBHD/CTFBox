@@ -83,7 +83,7 @@ const MODE_NAMES: Record<string, string> = {
   xor: "异或分析",
   "fake-encryption": "伪加密",
   lsb: "LSB 隐写",
-  image: "图片隐写",
+  image: "图片/文件隐写",
   audio: "音频隐写",
 };
 

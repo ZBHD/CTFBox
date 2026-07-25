@@ -28,3 +28,21 @@ describe("LSB workbench styles", () => {
     expect(css).not.toContain(".lsb-source-panel, .lsb-parameter-panel { overflow: visible; }");
   });
 });
+
+describe("image and file steganography workbench styles", () => {
+  it("defines stable result tabs, findings, tables and visual grids", () => {
+    expect(css).toContain(".stego-workspace-grid {");
+    expect(css).toContain(".stego-result-tabs {");
+    expect(css).toContain(".stego-finding-high {");
+    expect(css).toContain(".stego-table {");
+    expect(css).toContain(".stego-visual-grid {");
+    expect(css).toMatch(/\.stego-visual canvas\s*\{[^}]*max-width:\s*100%/s);
+  });
+
+  it("supports light theme and narrow single-column layouts", () => {
+    expect(css).toContain(':root[data-theme="light"] .stego-result-tabs');
+    expect(css).toContain(':root[data-theme="light"] .stego-finding-high');
+    expect(css).toMatch(/@media \(max-width: 820px\)[\s\S]*\.stego-workspace-grid\s*\{[^}]*grid-template:/s);
+    expect(css).toMatch(/@media \(max-width: 600px\)[\s\S]*\.stego-visual-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  });
+});

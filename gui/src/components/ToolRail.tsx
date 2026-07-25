@@ -36,7 +36,7 @@ const CRYPTO_TOOLS = [
 const MISC_TOOLS = [
   { id: "fake-encryption", name: "伪加密", detail: "归档标记检测与修复" },
   { id: "lsb", name: "LSB 隐写", detail: "像素低位数据提取" },
-  { id: "image", name: "图片隐写", detail: "图层、通道与附加数据" },
+  { id: "image", name: "图片/文件隐写", detail: "元数据、结构、DCT 与频域" },
   { id: "audio", name: "音频隐写", detail: "频谱与波形数据分析" },
 ];
 

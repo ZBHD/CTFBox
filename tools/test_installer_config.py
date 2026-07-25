@@ -35,6 +35,13 @@ class InstallerConfigTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertRegex(
+            workflow,
+            r"(?m)^concurrency:\r?\n"
+            r"^  group: windows-release-\$\{\{ github\.ref \}\}\r?\n"
+            r"^  cancel-in-progress: false$",
+        )
+
         self.assertEqual(
             config["bundle"]["createUpdaterArtifacts"], "v1Compatible"
         )

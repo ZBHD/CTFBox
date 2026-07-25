@@ -47,6 +47,7 @@ interface LegacySettingsPanelProps extends BaseSettingsPanelProps {
   restartError?: undefined;
   restartActionLabel?: undefined;
   linkError?: undefined;
+  currentVersion?: undefined;
 }
 
 interface ControlledSettingsPanelProps extends BaseSettingsPanelProps {
@@ -62,6 +63,7 @@ interface ControlledSettingsPanelProps extends BaseSettingsPanelProps {
   restartError: string | undefined;
   restartActionLabel: string;
   linkError: string | undefined;
+  currentVersion?: string;
 }
 
 type SettingsPanelProps = LegacySettingsPanelProps | ControlledSettingsPanelProps;
@@ -198,6 +200,7 @@ function UpdateStatus({
 
 function UpdateSettings({
   state,
+  currentVersion,
   onCheckUpdate,
   onStartUpdate,
   onRestartUpdate,
@@ -209,6 +212,7 @@ function UpdateSettings({
   linkError,
 }: {
   state: UpdateState;
+  currentVersion?: string;
   onCheckUpdate: () => void;
   onStartUpdate: () => void;
   onRestartUpdate: () => void;
@@ -219,6 +223,9 @@ function UpdateSettings({
   restartActionLabel: string;
   linkError: string | undefined;
 }) {
+  const installedVersion = state.currentVersion ?? currentVersion;
+  const latestVersion = state.latestVersion ?? (state.phase === "latest" ? installedVersion : undefined);
+
   return (
     <section className="settings-section settings-updates" aria-labelledby="settings-updates-title" hidden={false}>
       <div className="settings-section-title update-section-title">
@@ -236,8 +243,8 @@ function UpdateSettings({
           <span>一体化 CTF 工具箱</span>
         </div>
         <div className="update-version-grid">
-          <VersionValue label="当前版本" version={state.currentVersion} />
-          <VersionValue label="最新版本" version={state.latestVersion} accent={state.phase === "available"} />
+          <VersionValue label="当前版本" version={installedVersion} />
+          <VersionValue label="最新版本" version={latestVersion} accent={state.phase === "available"} />
         </div>
       </div>
 
@@ -331,6 +338,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         {isControlled && section === "updates" && (
           <UpdateSettings
             state={props.updateState}
+            currentVersion={props.currentVersion}
             onCheckUpdate={props.onCheckUpdate}
             onStartUpdate={props.onStartUpdate}
             onRestartUpdate={props.onRestartUpdate}

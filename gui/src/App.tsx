@@ -416,7 +416,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     onSelect: selectTool,
     onOpenSettings: () => setSettingsOpen(true),
   };
-  const availableUpdateVersion = updateState.latestVersion && ["available", "downloading", "ready"].includes(updateState.phase)
+  const availableUpdateVersion = updateHandle && updateState.latestVersion
+    && ["available", "downloading", "ready", "error"].includes(updateState.phase)
     ? updateState.latestVersion
     : undefined;
   const restartDialogOpen = updateHandle !== null
@@ -441,6 +442,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
           theme={theme}
           onChange={setFlagSettings}
           onThemeChange={setTheme}
+          currentVersion={health?.version}
           section={settingsSection}
           onSectionChange={setSettingsSection}
           updateState={updateState}

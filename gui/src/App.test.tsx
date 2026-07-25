@@ -276,6 +276,30 @@ describe("App update integration", () => {
     expect(relaunch).toHaveBeenCalledOnce();
   });
 
+  it("keeps the available update shortcut after a download failure", async () => {
+    const update = makeHandle();
+    const downloadUpdate = vi.fn(async (ownedUpdate: UpdateHandle, previousState: UpdateState) => ({
+      state: {
+        ...previousState,
+        phase: "error" as const,
+        error: "下载失败",
+      },
+      update: ownedUpdate,
+    }));
+    const renderer = renderApp(adapter({
+      checkLatest: vi.fn(async () => available(update)),
+      downloadUpdate,
+    }));
+    await flush();
+
+    act(() => renderer.root.findByProps({ "aria-label": "发现新版本 v0.2.0" }).props.onClick());
+    act(() => button(renderer.root, "更新到 v0.2.0").props.onClick());
+    await flush();
+
+    expect(textContent(renderer.root)).toContain("下载更新失败");
+    expect(renderer.root.findAllByProps({ "aria-label": "发现新版本 v0.2.0" })).toHaveLength(1);
+  });
+
   it("retries only relaunch after installation succeeded and resets the busy guard after failure", async () => {
     const update = makeHandle();
     const installation = deferred<void>();

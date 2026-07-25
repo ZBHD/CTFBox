@@ -41,6 +41,7 @@ function controlledProps(
     restartError: string | undefined;
     restartActionLabel: string;
     linkError: string | undefined;
+    currentVersion: string | undefined;
   }> = {},
 ) {
   return {
@@ -60,6 +61,7 @@ function controlledProps(
     restartError: undefined,
     restartActionLabel: "立即重启",
     linkError: undefined,
+    currentVersion: undefined,
     ...overrides,
   };
 }
@@ -271,6 +273,20 @@ describe("SettingsPanel", () => {
     );
 
     expect(html).toContain(expected);
+  });
+
+  it("uses the installed application version when the updater reports the latest release", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel
+        {...controlledProps(
+          { phase: "latest", downloadedBytes: 0 },
+          { currentVersion: "0.1.0" },
+        )}
+      />,
+    );
+
+    expect(html.match(/v0\.1\.0/g)).toHaveLength(2);
+    expect(html).not.toContain("--");
   });
 
   it("keeps a restart action in the ready settings state and disables it while busy", () => {

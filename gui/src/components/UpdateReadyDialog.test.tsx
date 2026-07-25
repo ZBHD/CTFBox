@@ -42,19 +42,9 @@ type Listener = (event: Record<string, unknown>) => void;
 
 function createDomHarness() {
   const listeners = new Map<string, Set<Listener>>();
-  const previous: FocusNodeMock = { focus: vi.fn(), isConnected: true };
-  const body: FocusNodeMock = { focus: vi.fn(), isConnected: true };
-  const postpone: FocusNodeMock = { focus: vi.fn(), isConnected: true };
-  const restart: FocusNodeMock = { focus: vi.fn(), isConnected: true };
-  const outside: FocusNodeMock = { focus: vi.fn(), isConnected: true };
-  const dialog: FocusNodeMock = {
-    focus: vi.fn(),
-    isConnected: true,
-    contains: (target) => target === dialog || target === postpone || target === restart,
-  };
   const documentMock = {
-    activeElement: previous as FocusNodeMock | null,
-    body,
+    activeElement: null as FocusNodeMock | null,
+    body: null as unknown as FocusNodeMock,
     addEventListener: vi.fn((type: string, listener: Listener) => {
       const entries = listeners.get(type) ?? new Set<Listener>();
       entries.add(listener);
@@ -64,6 +54,28 @@ function createDomHarness() {
       listeners.get(type)?.delete(listener);
     }),
   };
+  const emit = (type: string, event: Record<string, unknown>) => {
+    for (const listener of listeners.get(type) ?? []) listener(event);
+  };
+  const focusNode = (): FocusNodeMock => {
+    const node: FocusNodeMock = {
+      focus: vi.fn(() => {
+        documentMock.activeElement = node;
+        emit("focusin", { target: node });
+      }),
+      isConnected: true,
+    };
+    return node;
+  };
+  const previous = focusNode();
+  const body = focusNode();
+  const postpone = focusNode();
+  const restart = focusNode();
+  const outside = focusNode();
+  const dialog = focusNode();
+  dialog.contains = (target) => target === dialog || target === postpone || target === restart;
+  documentMock.activeElement = previous;
+  documentMock.body = body;
 
   return {
     body,
@@ -73,9 +85,7 @@ function createDomHarness() {
     postpone,
     previous,
     restart,
-    emit(type: string, event: Record<string, unknown>) {
-      for (const listener of listeners.get(type) ?? []) listener(event);
-    },
+    emit,
     listenerCount(type: string) {
       return listeners.get(type)?.size ?? 0;
     },
@@ -124,7 +134,11 @@ function renderDialogWithDom(
   return { dialog: dialog!, onPostpone, onRestart };
 }
 
+const unmountedDialogs = new WeakSet<ReactTestRenderer>();
+
 async function unmountDialog(dialog: ReactTestRenderer) {
+  if (unmountedDialogs.has(dialog)) return;
+  unmountedDialogs.add(dialog);
   await act(async () => {
     dialog.unmount();
     await Promise.resolve();
@@ -226,9 +240,9 @@ describe("UpdateReadyDialog", () => {
       expect(harness.listenerCount("keydown")).toBe(1);
       expect(harness.listenerCount("focusin")).toBe(1);
 
-      harness.documentMock.activeElement = harness.outside;
-      act(() => harness.emit("focusin", { target: harness.outside }));
+      act(() => harness.outside.focus());
       expect(harness.restart.focus).toHaveBeenCalledTimes(1);
+      expect(harness.documentMock.activeElement).toBe(harness.restart);
 
       await unmountDialog(dialog);
       expect(harness.listenerCount("keydown")).toBe(0);
@@ -236,6 +250,7 @@ describe("UpdateReadyDialog", () => {
       act(() => harness.emit("focusin", { target: harness.outside }));
       expect(harness.restart.focus).toHaveBeenCalledTimes(1);
     } finally {
+      await unmountDialog(dialog);
       vi.unstubAllGlobals();
     }
   });
@@ -261,6 +276,8 @@ describe("UpdateReadyDialog", () => {
       const restart = findButton(dialog.root, "立即重启");
       expect(postpone.props.disabled).toBe(true);
       expect(restart.props.disabled).toBe(true);
+      expect(harness.dialog.focus).toHaveBeenCalledTimes(1);
+      expect(harness.documentMock.activeElement).toBe(harness.dialog);
 
       act(() => {
         postpone.props.onClick();
@@ -286,6 +303,32 @@ describe("UpdateReadyDialog", () => {
     expect(onRestart).toHaveBeenCalledTimes(2);
   });
 
+  it("unlocks restart after a controlled busy cycle", () => {
+    const onPostpone = vi.fn();
+    const onRestart = vi.fn();
+    const view = (busy: boolean) => (
+      <UpdateReadyDialog
+        version="0.2.0"
+        busy={busy}
+        onPostpone={onPostpone}
+        onRestart={onRestart}
+      />
+    );
+    let dialog: ReactTestRenderer;
+    act(() => { dialog = create(view(false)); });
+
+    act(() => findButton(dialog!.root, "立即重启").props.onClick());
+    expect(onRestart).toHaveBeenCalledTimes(1);
+
+    act(() => dialog!.update(view(true)));
+    expect(findButton(dialog!.root, "立即重启").props.disabled).toBe(true);
+    act(() => dialog!.update(view(false)));
+    act(() => findButton(dialog!.root, "立即重启").props.onClick());
+
+    expect(onRestart).toHaveBeenCalledTimes(2);
+    expect(onPostpone).not.toHaveBeenCalled();
+  });
+
   it.each(["empty", "body", "detached"] as const)(
     "restores previous focus when current focus is %s",
     async (state) => {
@@ -301,6 +344,7 @@ describe("UpdateReadyDialog", () => {
         await unmountDialog(dialog);
         expect(harness.previous.focus).toHaveBeenCalledTimes(1);
       } finally {
+        await unmountDialog(dialog);
         vi.unstubAllGlobals();
       }
     },
@@ -315,6 +359,7 @@ describe("UpdateReadyDialog", () => {
       await unmountDialog(dialog);
       expect(harness.previous.focus).not.toHaveBeenCalled();
     } finally {
+      await unmountDialog(dialog);
       vi.unstubAllGlobals();
     }
   });

@@ -42,6 +42,7 @@ export function UpdateReadyDialog({
   const mounted = useRef(false);
   const actionLocked = useRef(false);
   const busyRef = useRef(busy);
+  const previousBusy = useRef(busy);
   const postponeAction = useRef(onPostpone);
 
   busyRef.current = busy;
@@ -115,6 +116,22 @@ export function UpdateReadyDialog({
       });
     };
   }, []);
+
+  useEffect(() => {
+    const wasBusy = previousBusy.current;
+    if (wasBusy && !busy) actionLocked.current = false;
+    previousBusy.current = busy;
+
+    if (typeof document === "undefined") return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (busy && document.activeElement !== dialog) {
+      dialog.focus();
+    } else if (wasBusy && !busy && document.activeElement === dialog) {
+      restartRef.current?.focus();
+    }
+  }, [busy]);
 
   return (
     <div className="update-ready-backdrop">

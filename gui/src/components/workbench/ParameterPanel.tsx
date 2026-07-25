@@ -60,7 +60,7 @@ function ChoiceField({
 function BooleanField({ field, checked, onChange }: { field: ParameterField; checked: boolean; onChange: ParameterPanelProps["onChange"] }) {
   return (
     <label className="parameter-toggle-row">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(field.id, event.target.checked)} />
+      <input className="parameter-toggle-input" type="checkbox" checked={checked} onChange={(event) => onChange(field.id, event.target.checked)} />
       <span className="check-box" />
       <span className="parameter-label"><strong>{field.label}</strong><code>{field.flag}</code></span>
     </label>

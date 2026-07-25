@@ -215,10 +215,11 @@ mark { padding: 1px 3px; color: #11140b; background: #f0c85c; }
 .parameter-field > input, .parameter-field > div:last-child > input, .parameter-field .file-field input, .inline-control input { height: 31px; padding: 0 8px; }
 .parameter-field textarea { min-height: 66px; padding: 7px 8px; resize: vertical; }
 .parameter-field input::placeholder, .parameter-field textarea::placeholder, .inline-control input::placeholder { color: #46545e; }
-.parameter-toggle-row { min-height: 35px; display: grid; grid-template-columns: 15px minmax(0,1fr); align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid #202c34; border-radius: 3px; background: #0d1419; cursor: pointer; }
-.parameter-toggle-row input { position: absolute; opacity: 0; pointer-events: none; }
+.parameter-toggle-row { position: relative; min-height: 35px; display: grid; grid-template-columns: 15px minmax(0,1fr); align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid #202c34; border-radius: 3px; background: #0d1419; cursor: pointer; }
+.parameter-toggle-row .parameter-toggle-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .parameter-toggle-row .check-box { width: 14px; height: 14px; }
 .parameter-toggle-row input:checked + .check-box { border-color: var(--green); background: var(--green); box-shadow: inset 0 0 0 3px #10251d; }
+.parameter-toggle-row input:focus-visible + .check-box { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .parameter-label { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .parameter-label strong { overflow: hidden; color: #9ba9b3; font-size: 9px; font-weight: 530; text-overflow: ellipsis; white-space: nowrap; }
 .choice-field { position: relative; }

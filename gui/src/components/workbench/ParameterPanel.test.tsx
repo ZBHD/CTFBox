@@ -36,6 +36,16 @@ describe("ParameterPanel", () => {
     expect(html).toContain("--url");
   });
 
+  it("keeps every boolean input inside its visible parameter control", () => {
+    const html = renderToStaticMarkup(
+      <ParameterPanel toolId="sqlmap" parameters={{}} onChange={() => undefined} />,
+    );
+    const checkboxTags = html.match(/<input[^>]*type="checkbox"[^>]*>/g) ?? [];
+
+    expect(checkboxTags.length).toBeGreaterThan(0);
+    expect(checkboxTags.every((tag) => tag.includes('class="parameter-toggle-input"'))).toBe(true);
+  });
+
   it("opens the native file picker and stores the selected path", async () => {
     const onChange = vi.fn();
     const openFileDialog = vi.fn().mockResolvedValue("C:\\fixtures\\sqlmap.ini");

@@ -15,6 +15,7 @@ import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import { buildCommand, type ToolParameters } from "./lib/commandBuilder";
 import { detectFlags } from "./lib/flagDetector";
 import { DEFAULT_FLAG_PREFIXES, loadFlagPrefixes, saveFlagPrefixes } from "./lib/flagPrefixPreference";
+import type { LocalAnalysisState } from "./lib/lsbTypes";
 import { getPlugin } from "./lib/pluginRegistry";
 import { createToolRunRequest } from "./lib/runnerProtocol";
 import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
@@ -323,6 +324,10 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     }));
   };
 
+  const updateLocalAnalysis = (analysis: LocalAnalysisState) => {
+    updateCurrentTask((current) => ({ ...current, localAnalysis: analysis }));
+  };
+
   const runCommand = () => {
     if (task.status === "running") {
       const activeRun = task.runs.find((run) => run.status === "running");
@@ -477,7 +482,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
             <ParameterPanel toolId={selection.toolId} parameters={task.parameters as ToolParameters} findings={task.findings} onChange={updateParameter} />
           </div> : selection.toolId === "crypto" ?
             <CryptoWorkbench mode={selection.mode ?? "encoding"} parameters={task.parameters as ToolParameters} flagPrefixes={prefixes} flagCaseSensitive={flagSettings.caseSensitive} flagEnabled={flagSettings.enabled} onChange={updateParameter} onClear={() => updateCurrentTask(clearTask)} /> :
-            <MiscWorkbench mode={selection.mode ?? "image"} parameters={task.parameters as ToolParameters} onChange={updateParameter} onClear={() => updateCurrentTask(clearTask)} />}
+            <MiscWorkbench mode={selection.mode ?? "image"} parameters={task.parameters as ToolParameters} analysis={task.localAnalysis} flagPrefixes={prefixes} flagCaseSensitive={flagSettings.caseSensitive} flagEnabled={flagSettings.enabled} onChange={updateParameter} onAnalysisChange={updateLocalAnalysis} onClear={() => updateCurrentTask(clearTask)} />}
           {!isWebTool && <FlagHitStrip hits={flagHits} />}
           <footer className="statusbar">
             <span className={health ? "status-dot status-dot-ok" : "status-dot"} />

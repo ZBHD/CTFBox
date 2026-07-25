@@ -1,0 +1,50 @@
+.suggestion-list {
+  display: grid;
+  gap: 1px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.suggestion-row {
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.suggestion-row > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.suggestion-row strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.suggestion-row code {
+  overflow: hidden;
+  color: var(--muted);
+  font: 10px "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestions .suggestion-row button {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+}
+
+.suggestions .suggestion-row button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}

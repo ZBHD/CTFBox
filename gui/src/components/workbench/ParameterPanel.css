@@ -1,0 +1,33 @@
+.result-choice-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.result-choice-field > input {
+  min-width: 0;
+  border-radius: 3px 0 0 3px;
+}
+
+.result-choice-trigger {
+  height: 31px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #293741;
+  border-left: 0;
+  border-radius: 0 3px 3px 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.result-choice-field .choice-menu {
+  top: calc(100% + 4px);
+  grid-column: 1 / -1;
+}
+
+:root[data-theme="light"] .result-choice-trigger {
+  border-color: #c8d3d7;
+  color: #536771;
+  background: #f3f6f7;
+}

@@ -1,8 +1,13 @@
 import { StrictMode, type ComponentType } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, { type AppUpdateAdapter } from "./App";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { ModeControls } from "./components/workbench/ModeControls";
+import { ParameterPanel } from "./components/workbench/ParameterPanel";
+import { ResultsPanel } from "./components/workbench/ResultsPanel";
+import type { ToolStreamEvent } from "./state/taskStore";
 import {
   UpdateRelaunchError,
   type CheckLatestOptions,
@@ -595,5 +600,66 @@ describe("App update integration", () => {
     mounted.splice(mounted.indexOf(renderer), 1);
     await flush();
     expect(second.close).toHaveBeenCalledOnce();
+  });
+
+  it("waits for a click before running a suggested SQLmap command from analysis events", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.0", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(ModeControls).props.onRun());
+    await flush();
+
+    const runCalls = () => invokeMock.mock.calls.filter(([command]) => command === "run_tool");
+    expect(runCalls()).toHaveLength(1);
+    const firstPayload = runCalls()[0][1] as {
+      request: { runId: string; arguments: string[] };
+      onEvent: { onmessage?: (event: ToolStreamEvent) => void };
+    };
+    expect(renderer.root.findByType(ResultsPanel).props.suggestions).toEqual([]);
+
+    act(() => {
+      firstPayload.onEvent.onmessage?.({
+        event: "output",
+        runId: firstPayload.request.runId,
+        stream: "stdout",
+        chunk: "available databases [1]:\n[*] app\n",
+      });
+      firstPayload.onEvent.onmessage?.({
+        event: "analysis",
+        runId: firstPayload.request.runId,
+        findings: [{ kind: "database", value: "app" }],
+      });
+      firstPayload.onEvent.onmessage?.({
+        event: "exit",
+        runId: firstPayload.request.runId,
+        status: "completed",
+        code: 0,
+      });
+    });
+
+    expect(runCalls()).toHaveLength(1);
+    expect(textContent(renderer.root)).toContain("available databases [1]");
+    const suggestion = renderer.root.findByType(ResultsPanel).props.suggestions[0];
+    expect(suggestion.patch).toEqual({ database: "app", tables: true });
+
+    act(() => renderer.root.findByProps({ "aria-label": `执行建议：${suggestion.label}` }).props.onClick());
+    await flush();
+
+    expect(runCalls()).toHaveLength(2);
+    const secondPayload = runCalls()[1][1] as { request: { arguments: string[] } };
+    expect(secondPayload.request.arguments).toEqual([
+      "--url",
+      "TARGET_URL",
+      "--tables",
+      "-D",
+      "app",
+    ]);
+    expect(textContent(renderer.root)).toContain("available databases [1]");
   });
 });

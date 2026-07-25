@@ -3,6 +3,12 @@ import { act, create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { ParameterPanel } from "./ParameterPanel";
 
+function textContent(node: { children: Array<string | { children: unknown[] }> }): string {
+  return node.children
+    .map((child) => typeof child === "string" ? child : textContent(child as { children: Array<string | { children: unknown[] }> }))
+    .join("");
+}
+
 describe("ParameterPanel", () => {
   it("marks sample input placeholders as examples", () => {
     const html = renderToStaticMarkup(
@@ -69,5 +75,80 @@ describe("ParameterPanel", () => {
 
     expect(openFileDialog).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith("configFile", "C:\\fixtures\\sqlmap.ini");
+  });
+
+  it("filters discovered tables and columns by the selected context", () => {
+    const panel = create(
+      <ParameterPanel
+        toolId="sqlmap"
+        parameters={{ database: "app", table: "users" }}
+        findings={[
+          { kind: "database", value: "app" },
+          { kind: "database", value: "audit" },
+          { kind: "table", value: "users", database: "app" },
+          { kind: "table", value: "events", database: "audit" },
+          { kind: "column", value: "name", database: "app", table: "users" },
+          { kind: "column", value: "total", database: "app", table: "orders" },
+          { kind: "column", value: "token", database: "audit", table: "users" },
+        ]}
+        onChange={() => undefined}
+      />,
+    );
+
+    act(() => {
+      panel.root.findAllByType("button").find((item) => textContent(item).trim() === "枚举")?.props.onClick();
+    });
+    const triggers = panel.root.findAllByProps({ title: "选择已发现结果" });
+
+    act(() => triggers[1].props.onClick());
+    const tableMenu = panel.root.findAllByProps({ role: "listbox" })[0];
+    expect(textContent(tableMenu)).toContain("users");
+    expect(textContent(tableMenu)).not.toContain("events");
+
+    act(() => triggers[2].props.onClick());
+    const columnMenu = panel.root.findAllByProps({ role: "listbox" }).at(-1)!;
+    expect(textContent(columnMenu)).toContain("name");
+    expect(textContent(columnMenu)).not.toContain("total");
+    expect(textContent(columnMenu)).not.toContain("token");
+  });
+
+  it("keeps manual result input when the selected context has no findings", () => {
+    const panel = create(
+      <ParameterPanel
+        toolId="sqlmap"
+        parameters={{ database: "app" }}
+        findings={[{ kind: "table", value: "events", database: "audit" }]}
+        onChange={() => undefined}
+      />,
+    );
+
+    act(() => {
+      panel.root.findAllByType("button").find((item) => textContent(item).trim() === "枚举")?.props.onClick();
+    });
+
+    expect(panel.root.findAllByProps({ placeholder: "选择或输入数据表" })).toHaveLength(1);
+  });
+
+  it("keeps manual entry available alongside discovered result options", () => {
+    const onChange = vi.fn();
+    const panel = create(
+      <ParameterPanel
+        toolId="sqlmap"
+        parameters={{}}
+        findings={[{ kind: "database", value: "app" }]}
+        onChange={onChange}
+      />,
+    );
+
+    act(() => {
+      panel.root.findAllByType("button").find((item) => textContent(item).trim() === "枚举")?.props.onClick();
+    });
+    const manualInput = panel.root.findAllByType("input")
+      .find((item) => item.props.placeholder === "选择或输入数据库");
+    expect(manualInput).toBeDefined();
+    act(() => manualInput!.props.onChange({ target: { value: "manual_db" } }));
+
+    expect(onChange).toHaveBeenCalledWith("database", "manual_db");
+    expect(panel.root.findAllByProps({ title: "选择已发现结果" })).toHaveLength(1);
   });
 });

@@ -1,6 +1,8 @@
-import { ListTree } from "lucide-react";
+import { ListTree, Play } from "lucide-react";
 import type { FlagHit } from "../../lib/flagDetector";
-import type { StructuredFinding, TaskSuggestion } from "../../state/taskStore";
+import type { TaskSuggestion } from "../../lib/suggestionEngine";
+import type { StructuredFinding } from "../../state/taskStore";
+import "./ResultsPanel.css";
 
 interface ResultsPanelProps {
   findings: StructuredFinding[];
@@ -8,6 +10,8 @@ interface ResultsPanelProps {
   flagEnabled: boolean;
   flagPrefixes: string[];
   flagHits?: FlagHit[];
+  running: boolean;
+  onApplySuggestion: (suggestion: TaskSuggestion) => void;
 }
 
 function highlightFlag(value: string, enabled: boolean, prefixes: string[]) {
@@ -19,7 +23,7 @@ function highlightFlag(value: string, enabled: boolean, prefixes: string[]) {
   );
 }
 
-export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes, flagHits = [] }: ResultsPanelProps) {
+export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes, flagHits = [], running, onApplySuggestion }: ResultsPanelProps) {
   return (
     <section className="results-panel">
       <header className="panel-header">
@@ -30,6 +34,30 @@ export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes,
         {flagHits.length > 0 && <div className="flag-findings">
           {flagHits.map((hit, index) => <div className="flag-finding" key={`${hit.source}-${hit.text}-${index}`}><mark>{hit.text}</mark>{hit.source === "base64" && <span>Base64</span>}</div>)}
         </div>}
+        {suggestions.length > 0 && (
+          <div className="suggestions">
+            <span>下一步</span>
+            <div className="suggestion-list">
+              {suggestions.map((item) => (
+                <div className="suggestion-row" key={item.id}>
+                  <div>
+                    <strong>{item.label}</strong>
+                    {item.commandPreview && <code>{item.commandPreview}</code>}
+                  </div>
+                  <button
+                    type="button"
+                    title="执行建议"
+                    aria-label={`执行建议：${item.label}`}
+                    disabled={running}
+                    onClick={() => onApplySuggestion(item)}
+                  >
+                    <Play size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {findings.length === 0 && flagHits.length === 0 ? (
           <div className="results-empty"><span>暂无结果</span><small>运行后将从回显中提取可用字段</small></div>
         ) : findings.map((finding, index) => (
@@ -38,12 +66,6 @@ export function ResultsPanel({ findings, suggestions, flagEnabled, flagPrefixes,
             <strong>{highlightFlag(finding.value, flagEnabled, flagPrefixes)}</strong>
           </div>
         ))}
-        {suggestions.length > 0 && (
-          <div className="suggestions">
-            <span>下一步</span>
-            {suggestions.map((item) => <button type="button" key={item.id}>{item.label}</button>)}
-          </div>
-        )}
       </div>
     </section>
   );

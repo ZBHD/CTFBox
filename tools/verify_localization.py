@@ -23,6 +23,22 @@ PLACEHOLDER_RE = re.compile(
     r"%(?:\([A-Za-z_][A-Za-z0-9_]*\))?[#0 +\-]?(?:\d+|\*)?(?:\.\d+)?[diouxXeEfFgGcrsa%]"
     r"|\{(?:[A-Za-z_][A-Za-z0-9_]*|\d+)(?:![rsa])?(?::[^{}]+)?\}"
 )
+TEXT_EXTENSIONS = {
+    ".conf",
+    ".html",
+    ".json",
+    ".md",
+    ".md5",
+    ".pl",
+    ".py",
+    ".sh",
+    ".sql",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+TEXT_FILENAMES = {".gitattributes", ".gitignore", "COMMITMENT", "LICENSE"}
 
 
 class CheckResults:
@@ -37,11 +53,14 @@ class CheckResults:
 
 
 def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    content = path.read_bytes()
+    is_text = (
+        b"\0" not in content
+        and (path.suffix.lower() in TEXT_EXTENSIONS or path.name in TEXT_FILENAMES)
+    )
+    if is_text:
+        content = content.replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 def read_baseline() -> dict[str, str]:

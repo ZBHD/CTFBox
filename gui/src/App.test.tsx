@@ -303,8 +303,13 @@ describe("App update integration", () => {
 
     expect(textContent(renderer.root)).toContain("重启应用失败");
     expect(textContent(renderer.root)).toContain("再次重启");
-    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(1);
     expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("ready");
+
+    act(() => button(renderer.root, "稍后重启").props.onClick());
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(1);
+    expect(textContent(renderer.root.findByProps({ role: "alert" }))).toContain("重启应用失败");
 
     act(() => button(renderer.root, "再次重启").props.onClick());
     await flush();
@@ -376,7 +381,7 @@ describe("App update integration", () => {
     await flush();
     expect(textContent(renderer.root)).toContain("再次重启");
     expect(textContent(renderer.root)).toContain("应用仍在运行");
-    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(1);
     act(() => button(renderer.root, "再次重启").props.onClick());
     await flush();
 
@@ -457,6 +462,39 @@ describe("App update integration", () => {
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("available");
     expect(update.close).not.toHaveBeenCalled();
+  });
+
+  it("clears a link error when a newer request starts and ignores an older late failure", async () => {
+    const update = makeHandle();
+    const pending = deferred<void>();
+    const openUrl = vi.fn()
+      .mockRejectedValueOnce(new Error("first failure"))
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(undefined);
+    const renderer = renderApp(adapter({
+      checkLatest: vi.fn(async () => available(update)),
+      openUrl,
+    }));
+    await flush();
+    act(() => renderer.root.findByProps({ "aria-label": "发现新版本 v0.2.0" }).props.onClick());
+
+    act(() => button(renderer.root, "GitHub").props.onClick());
+    await flush();
+    expect(textContent(renderer.root.findByProps({ role: "alert" }))).toContain("first failure");
+
+    act(() => button(renderer.root, "更新日志").props.onClick());
+    await flush();
+    expect(openUrl).toHaveBeenCalledTimes(2);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+
+    act(() => button(renderer.root, "GitHub").props.onClick());
+    await flush();
+    expect(openUrl).toHaveBeenCalledTimes(3);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+
+    await act(async () => pending.reject(new Error("late failure")));
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    expect(renderer.root.findByType(SettingsPanel).props.updateState.phase).toBe("available");
   });
 
   it("keeps a ready update restartable when opening a link fails", async () => {

@@ -286,6 +286,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
 
   const openExternalUrl = (url: string) => {
     const sequence = ++linkSequenceRef.current;
+    setLinkError(undefined);
     void Promise.resolve().then(() => updateAdapter.openUrl(url)).then(() => {
       if (mountedRef.current && linkSequenceRef.current === sequence) setLinkError(undefined);
     }).catch((error) => {
@@ -418,6 +419,9 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const availableUpdateVersion = updateState.latestVersion && ["available", "downloading", "ready"].includes(updateState.phase)
     ? updateState.latestVersion
     : undefined;
+  const restartDialogOpen = updateHandle !== null
+    && updateState.phase === "ready"
+    && !restartDialogPostponed;
 
   return (
     <div className="app-shell">
@@ -446,7 +450,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
           onOpenGitHub={() => openExternalUrl(GITHUB_URL)}
           onOpenReleaseNotes={() => openExternalUrl(RELEASE_NOTES_URL)}
           restartBusy={restartBusy}
-          restartError={restartError}
+          restartError={restartDialogOpen ? undefined : restartError}
           restartActionLabel={installedRef.current ? "再次重启" : restartError ? "重试安装" : "立即重启"}
           linkError={linkError}
         />
@@ -481,7 +485,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
           </footer>
         </main>
       )}
-      {updateHandle && updateState.phase === "ready" && !restartDialogPostponed && (
+      {restartDialogOpen && updateHandle && (
         <UpdateReadyDialog
           version={updateState.latestVersion ?? updateHandle.version}
           busy={restartBusy}

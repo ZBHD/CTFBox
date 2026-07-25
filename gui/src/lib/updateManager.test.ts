@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   checkLatest,
+  createSetupUpdateCheck,
   downloadUpdate,
   formatUpdateError,
   installAndRelaunch,
@@ -8,6 +9,7 @@ import {
   type DownloadEvent,
   type UpdateHandle,
   type UpdateState,
+  type SetupUpdateBackend,
 } from "./updateManager";
 
 function deferred<T>() {
@@ -45,6 +47,43 @@ function availableState(): UpdateState {
 }
 
 describe("update manager", () => {
+  it("adapts the Setup-only backend to the existing update handle", async () => {
+    const events: DownloadEvent[] = [];
+    const backend: SetupUpdateBackend = {
+      check: vi.fn(async () => ({
+        updateId: 17,
+        currentVersion: "0.1.2",
+        version: "0.1.3",
+        date: "2026-07-25T15:00:00Z",
+        body: "修复更新流程",
+      })),
+      download: vi.fn(async (_updateId, _version, onEvent) => {
+        onEvent({ event: "Started", data: { contentLength: 1024 } });
+        onEvent({ event: "Progress", data: { chunkLength: 1024 } });
+        onEvent({ event: "Finished" });
+      }),
+      install: vi.fn(async () => undefined),
+      discard: vi.fn(async () => undefined),
+    };
+
+    const result = await checkLatest({ check: createSetupUpdateCheck(backend) });
+    const update = result.update;
+    expect(update).toBeDefined();
+
+    await update?.download((event) => { events.push(event); });
+    await update?.install();
+    await update?.close();
+
+    expect(events).toEqual([
+      { event: "Started", data: { contentLength: 1024 } },
+      { event: "Progress", data: { chunkLength: 1024 } },
+      { event: "Finished" },
+    ]);
+    expect(backend.download).toHaveBeenCalledWith(17, "0.1.3", expect.any(Function));
+    expect(backend.install).toHaveBeenCalledWith(17, "0.1.3");
+    expect(backend.discard).toHaveBeenCalledWith(17, "0.1.3");
+  });
+
   it("returns available metadata and keeps the update handle open", async () => {
     const update = createUpdate();
 

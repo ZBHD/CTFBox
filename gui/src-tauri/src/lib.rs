@@ -1,4 +1,5 @@
 mod analysis;
+mod setup_updater;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -503,17 +504,22 @@ mod tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let setup_updater = setup_updater::SetupUpdater::new().expect("初始化应用更新客户端失败");
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ProcessManager::default())
+        .manage(setup_updater)
         .invoke_handler(tauri::generate_handler![
             app_health,
             run_tool,
             send_tool_input,
-            stop_tool
+            stop_tool,
+            setup_updater::check_setup_update,
+            setup_updater::download_setup_update,
+            setup_updater::install_setup_update,
+            setup_updater::discard_setup_update
         ])
         .run(tauri::generate_context!())
         .expect("CTFBox 启动失败");

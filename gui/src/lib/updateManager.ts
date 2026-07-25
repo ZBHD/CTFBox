@@ -1,10 +1,10 @@
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { relaunch as tauriRelaunch } from "@tauri-apps/plugin-process";
-import {
-  check as tauriCheck,
-  type DownloadEvent,
-} from "@tauri-apps/plugin-updater";
 
-export type { DownloadEvent } from "@tauri-apps/plugin-updater";
+export type DownloadEvent =
+  | { event: "Started"; data: { contentLength?: number } }
+  | { event: "Progress"; data: { chunkLength: number } }
+  | { event: "Finished" };
 
 export type UpdatePhase =
   | "idle"
@@ -34,6 +34,21 @@ export interface UpdateHandle {
   download(onEvent: (event: DownloadEvent) => void): Promise<void>;
   install(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface SetupUpdateMetadata {
+  updateId: number;
+  currentVersion: string;
+  version: string;
+  date?: string;
+  body?: string;
+}
+
+export interface SetupUpdateBackend {
+  check(): Promise<SetupUpdateMetadata | null>;
+  download(updateId: number, version: string, onEvent: (event: DownloadEvent) => void): Promise<void>;
+  install(updateId: number, version: string): Promise<void>;
+  discard(updateId: number, version: string): Promise<void>;
 }
 
 export interface UpdateResult {
@@ -72,6 +87,33 @@ const EMPTY_STATE: UpdateState = {
   downloadedBytes: 0,
 };
 const FINISHED_GRACE_MS = 1000;
+
+const TAURI_SETUP_UPDATE_BACKEND: SetupUpdateBackend = {
+  check: () => invoke<SetupUpdateMetadata | null>("check_setup_update"),
+  download: async (updateId, version, onEvent) => {
+    const channel = new Channel<DownloadEvent>();
+    channel.onmessage = onEvent;
+    await invoke("download_setup_update", { updateId, version, onEvent: channel });
+  },
+  install: (updateId, version) => invoke("install_setup_update", { updateId, version }),
+  discard: (updateId, version) => invoke("discard_setup_update", { updateId, version }),
+};
+
+export function createSetupUpdateCheck(backend: SetupUpdateBackend): CheckAdapter {
+  return async () => {
+    const metadata = await backend.check();
+    if (!metadata) return null;
+
+    return {
+      ...metadata,
+      download: (onEvent) => backend.download(metadata.updateId, metadata.version, onEvent),
+      install: () => backend.install(metadata.updateId, metadata.version),
+      close: () => backend.discard(metadata.updateId, metadata.version),
+    };
+  };
+}
+
+const checkSetupUpdate = createSetupUpdateCheck(TAURI_SETUP_UPDATE_BACKEND);
 
 type CheckOutcome =
   | { kind: "completed"; update: UpdateHandle | null }
@@ -155,7 +197,7 @@ export function formatUpdateError(error: unknown): string {
 export async function checkLatest(
   options: CheckLatestOptions = {},
 ): Promise<UpdateResult> {
-  const check = options.check ?? tauriCheck;
+  const check = options.check ?? checkSetupUpdate;
   if (options.signal?.aborted) return { state: { ...EMPTY_STATE } };
 
   if (!options.silent) {

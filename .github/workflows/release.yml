@@ -70,38 +70,7 @@ jobs:
 
       - name: 构建安装包
         shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --dir gui build
-
-      - name: 验证更新签名
-        shell: pwsh
-        run: |
-          $updaters = @(Get-ChildItem -LiteralPath "gui/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -File)
-          if ($updaters.Count -ne 1) { throw "更新归档数量异常：$($updaters.Count)" }
-          $updater = $updaters[0]
-          $signatureFile = "$($updater.FullName).sig"
-          $signatureAsset = Get-Item -LiteralPath $signatureFile -ErrorAction Stop
-          $config = Get-Content -LiteralPath "gui/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
-          $publicKeyFile = Join-Path $env:RUNNER_TEMP "ctfbox-updater.pub"
-          $decodedSignatureFile = Join-Path $env:RUNNER_TEMP "ctfbox-updater.sig"
-          try {
-            $publicKeyBytes = [Convert]::FromBase64String($config.plugins.updater.pubkey)
-            $signatureBytes = [Convert]::FromBase64String((Get-Content -LiteralPath $signatureFile -Raw).Trim())
-          } catch {
-            throw "更新签名材料不是有效的 Base64：$($_.Exception.Message)"
-          }
-          [IO.File]::WriteAllBytes($publicKeyFile, $publicKeyBytes)
-          [IO.File]::WriteAllBytes($decodedSignatureFile, $signatureBytes)
-          $env:CTFBOX_UPDATER_ARCHIVE = $updater.FullName
-          $env:CTFBOX_UPDATER_SIGNATURE = $decodedSignatureFile
-          $env:CTFBOX_UPDATER_PUBLIC_KEY = $publicKeyFile
-          cargo test --locked --manifest-path "gui/src-tauri/Cargo.toml" --test updater_signature -- --ignored --exact signed_updater_archive_matches_embedded_public_key | Tee-Object -Variable verificationOutput
-          if ($LASTEXITCODE -ne 0) { throw "更新签名验证失败" }
-          if (($verificationOutput -join "`n") -notmatch 'test result: ok\. 1 passed; 0 failed; 0 ignored;') {
-            throw "更新签名验证未执行唯一的门禁测试"
-          }
 
       - name: 发布到 GitHub Release
         shell: pwsh
@@ -109,35 +78,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
         run: |
-          $asset = Get-Item "gui/src-tauri/target/release/bundle/nsis/*-setup.exe"
-          $updater = Get-Item "gui/src-tauri/target/release/bundle/nsis/*.nsis.zip"
-          if (@($asset).Count -ne 1) { throw "安装包数量异常：$(@($asset).Count)" }
-          if (@($updater).Count -ne 1) { throw "更新归档数量异常：$(@($updater).Count)" }
-          $signatureFile = "$($updater.FullName).sig"
-          $signatureAsset = Get-Item -LiteralPath $signatureFile
-          $checksum = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
-          "$checksum  $($asset.Name)" | Set-Content -LiteralPath "SHA256SUMS.txt" -Encoding ascii
           $tag = $env:GITHUB_REF_NAME
           $version = $env:RELEASE_VERSION
           if ($tag -ne "v$version" -or $version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
             throw "发布版本输出无效"
           }
-          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          $signature = (Get-Content -LiteralPath $signatureFile -Raw).Trim()
-          $repositoryUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
-          $downloadUrl = "$repositoryUrl/releases/download/$tag/$($updater.Name)"
-          $manifest = [ordered]@{
-            version = $version
-            notes = "CTFBox $tag"
-            pub_date = $pubDate
-            platforms = [ordered]@{
-              "windows-x86_64" = [ordered]@{
-                signature = $signature
-                url = $downloadUrl
-              }
-            }
-          }
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "latest.json" -Encoding utf8
+
+          $builtAssets = @(Get-ChildItem -LiteralPath "gui/src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -File)
+          if ($builtAssets.Count -ne 1) { throw "安装包数量异常：$($builtAssets.Count)" }
+          $assetName = "CTFBox-$version-windows-x64-setup.exe"
+          $assetDirectory = Join-Path $env:RUNNER_TEMP "ctfbox-release-assets"
+          New-Item -ItemType Directory -Path $assetDirectory -Force | Out-Null
+          $assetPath = Join-Path $assetDirectory $assetName
+          Copy-Item -LiteralPath $builtAssets[0].FullName -Destination $assetPath -Force
+          $asset = Get-Item -LiteralPath $assetPath
+          $localHash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedDigest = "sha256:$localHash"
+
           $releaseJson = Join-Path $env:RUNNER_TEMP "ctfbox-release.json"
           $releaseError = Join-Path $env:RUNNER_TEMP "ctfbox-release-error.txt"
           gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" > $releaseJson 2> $releaseError
@@ -150,15 +107,48 @@ jobs:
             if ($release.prerelease) {
               throw "草稿 Release 被标记为预发布版本，停止发布：$tag"
             }
-            gh release upload $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --clobber
-            if ($LASTEXITCODE -ne 0) { throw "覆盖草稿 Release 资产失败" }
+            foreach ($existingAsset in @($release.assets)) {
+              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/assets/$($existingAsset.id)"
+              if ($LASTEXITCODE -ne 0) { throw "清理草稿 Release 旧资产失败" }
+            }
+            gh release upload $tag $asset.FullName --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "上传 Setup 到草稿 Release 失败" }
           } else {
             $queryError = Get-Content -LiteralPath $releaseError -Raw
             if ($queryError -notmatch 'HTTP 404') {
               throw "查询 GitHub Release 失败，退出码：$queryExitCode"
             }
-          gh release create $tag $asset.FullName "SHA256SUMS.txt" $updater.FullName $signatureAsset.FullName "latest.json" --repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" --generate-notes --verify-tag
+            gh release create $tag $asset.FullName --repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" --generate-notes --verify-tag
             if ($LASTEXITCODE -ne 0) { throw "创建草稿 Release 失败" }
           }
+          $release = $null
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw "读取已发布 Release 失败" }
+            if ($release.assets.Count -eq 1 -and $release.assets[0].digest -eq $expectedDigest) {
+              break
+            }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $release.draft -or $release.prerelease) { throw "Release 草稿状态异常" }
+          if ($release.assets.Count -ne 1) { throw "Release 必须且只能包含一个 Setup" }
+          if ($release.assets[0].name -ne $assetName) { throw "Release Setup 名称不符合规范" }
+          if ($release.assets[0].digest -ne $expectedDigest) { throw "GitHub 资产 digest 与本地 Setup 不一致" }
+
+          $downloadDirectory = Join-Path $env:RUNNER_TEMP "ctfbox-release-download"
+          New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $assetName --dir $downloadDirectory
+          if ($LASTEXITCODE -ne 0) { throw "重新下载已发布 Setup 失败" }
+          $downloadedAsset = Get-Item -LiteralPath (Join-Path $downloadDirectory $assetName)
+          $downloadedHash = (Get-FileHash -LiteralPath $downloadedAsset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($downloadedHash -ne $localHash) { throw "Release 草稿 Setup 下载校验失败" }
+
           gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest --title "CTFBox $tag"
           if ($LASTEXITCODE -ne 0) { throw "发布 Release 失败，草稿已保留以便重试" }
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "读取已发布 Release 失败" }
+          if ($release.draft -or $release.prerelease) { throw "Release 未处于稳定发布状态" }
+          if ($release.assets.Count -ne 1) { throw "已发布 Release 资产数量异常" }
+          if ($release.assets[0].name -ne $assetName -or $release.assets[0].digest -ne $expectedDigest) {
+            throw "已发布 Release 资产信息异常"
+          }

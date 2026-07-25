@@ -188,6 +188,6 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
 
   const firstFile = files[0];
   const mediaType = firstFile?.mediaType ?? (printableRatio >= 0.75 ? "text/plain" : "application/octet-stream");
-  const preview = printableRatio >= 0.6 ? text : bytesToHexPreview(bytes);
+  const preview = flags.length > 0 || printableRatio >= 0.6 ? text : bytesToHexPreview(bytes);
   return { score, evidence, preview, mediaType, files };
 }

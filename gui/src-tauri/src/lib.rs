@@ -1,3 +1,5 @@
+mod analysis;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
@@ -35,6 +37,11 @@ enum ToolStreamEvent {
         stream: &'static str,
         chunk: String,
     },
+    Analysis {
+        #[serde(rename = "runId")]
+        run_id: String,
+        findings: Vec<analysis::Finding>,
+    },
     Exit {
         #[serde(rename = "runId")]
         run_id: String,
@@ -42,6 +49,8 @@ enum ToolStreamEvent {
         code: Option<i32>,
     },
 }
+
+type SharedAnalyzer = Arc<Mutex<Box<dyn analysis::ToolOutputAnalyzer>>>;
 
 #[derive(Clone, Default)]
 struct ProcessManager {
@@ -148,11 +157,40 @@ fn emit_output(
     });
 }
 
+fn analyze_chunk(
+    analyzer: &Option<SharedAnalyzer>,
+    stream: analysis::StreamKind,
+    chunk: &str,
+    eof: bool,
+) -> Vec<analysis::Finding> {
+    analyzer
+        .as_ref()
+        .and_then(|value| value.lock().ok())
+        .map(|mut value| value.push(stream, chunk, eof))
+        .unwrap_or_default()
+}
+
+fn emit_analysis(
+    channel: &Channel<ToolStreamEvent>,
+    run_id: &str,
+    findings: Vec<analysis::Finding>,
+) {
+    if findings.is_empty() {
+        return;
+    }
+    let _ = channel.send(ToolStreamEvent::Analysis {
+        run_id: run_id.to_string(),
+        findings,
+    });
+}
+
 fn forward_stream<R: Read + Send + 'static>(
     mut reader: R,
     channel: Channel<ToolStreamEvent>,
     run_id: String,
     stream: &'static str,
+    stream_kind: analysis::StreamKind,
+    analyzer: Option<SharedAnalyzer>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0_u8; 4096];
@@ -162,13 +200,17 @@ fn forward_stream<R: Read + Send + 'static>(
                 Ok(0) => break,
                 Ok(size) => {
                     let chunk = decode_utf8_stream(&mut pending, &buffer[..size], false);
-                    emit_output(&channel, &run_id, stream, chunk);
+                    emit_output(&channel, &run_id, stream, chunk.clone());
+                    let findings = analyze_chunk(&analyzer, stream_kind, &chunk, false);
+                    emit_analysis(&channel, &run_id, findings);
                 }
                 Err(_) => break,
             }
         }
         let chunk = decode_utf8_stream(&mut pending, &[], true);
-        emit_output(&channel, &run_id, stream, chunk);
+        emit_output(&channel, &run_id, stream, chunk.clone());
+        let findings = analyze_chunk(&analyzer, stream_kind, &chunk, true);
+        emit_analysis(&channel, &run_id, findings);
     })
 }
 
@@ -280,8 +322,24 @@ fn run_tool(
     if let Ok(mut children) = manager.children.lock() {
         children.insert(request.run_id.clone(), child.clone());
     }
-    let stdout_thread = forward_stream(stdout, on_event.clone(), request.run_id.clone(), "stdout");
-    let stderr_thread = forward_stream(stderr, on_event.clone(), request.run_id.clone(), "stderr");
+    let analyzer =
+        analysis::analyzer_for(&request.tool_id).map(|value| Arc::new(Mutex::new(value)));
+    let stdout_thread = forward_stream(
+        stdout,
+        on_event.clone(),
+        request.run_id.clone(),
+        "stdout",
+        analysis::StreamKind::Stdout,
+        analyzer.clone(),
+    );
+    let stderr_thread = forward_stream(
+        stderr,
+        on_event.clone(),
+        request.run_id.clone(),
+        "stderr",
+        analysis::StreamKind::Stderr,
+        analyzer,
+    );
     monitor_process(
         on_event,
         manager,
@@ -347,7 +405,13 @@ fn stop_tool(manager: State<'_, ProcessManager>, run_id: String) -> Result<(), S
 
 #[cfg(test)]
 mod tests {
-    use super::{build_tool_arguments, decode_utf8_stream, ToolRunRequest, PYTHON_RUNTIME_FLAGS};
+    use super::{
+        analysis, analyze_chunk, build_tool_arguments, decode_utf8_stream, ToolRunRequest,
+        ToolStreamEvent, PYTHON_RUNTIME_FLAGS,
+    };
+    use crate::analysis::StreamKind;
+    use serde_json::json;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn disables_python_bytecode_for_bundled_tools() {
@@ -399,6 +463,41 @@ mod tests {
             "汉化回显"
         );
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn serializes_analysis_events_with_the_existing_tag_protocol() {
+        let event = ToolStreamEvent::Analysis {
+            run_id: "run-1".into(),
+            findings: vec![analysis::Finding {
+                kind: "database".into(),
+                value: "app".into(),
+                database: None,
+                table: None,
+                detail: None,
+            }],
+        };
+
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            json!({
+                "event": "analysis",
+                "runId": "run-1",
+                "findings": [{ "kind": "database", "value": "app" }]
+            })
+        );
+    }
+
+    #[test]
+    fn analyzes_chunks_without_consuming_the_output_text() {
+        let analyzer = analysis::analyzer_for("sqlmap").map(|value| Arc::new(Mutex::new(value)));
+        let output = "available databases [1]:\n[*] app\n";
+
+        let findings = analyze_chunk(&analyzer, StreamKind::Stdout, output, false);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].value, "app");
+        assert_eq!(output, "available databases [1]:\n[*] app\n");
     }
 }
 

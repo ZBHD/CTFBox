@@ -1,6 +1,6 @@
 [package]
 name = "ctfbox"
-version = "0.1.0"
+version = "1.1.2"
 description = "CTFBox desktop workbench"
 authors = ["ZBHD"]
 edition = "2021"

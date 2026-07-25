@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_FLAG_PREFIX_PREFERENCE } from "../lib/flagPrefixPreference";
 import type { UpdateState } from "../lib/updateManager";
 import {
   SettingsPanel,
@@ -12,7 +13,7 @@ import {
 
 const settings: FlagSettings = {
   enabled: true,
-  prefixes: "flag, CTF",
+  prefixes: DEFAULT_FLAG_PREFIX_PREFERENCE,
   scanOutput: true,
   scanStructured: true,
   scanBase64: true,
@@ -160,6 +161,16 @@ describe("SettingsPanel", () => {
 
     expect(html).toContain("外观");
     expect(html).toContain("亮色");
+  });
+
+  it("shows the compact built-in prefix list without comma-entry instructions", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel value={settings} theme="dark" onChange={() => undefined} onThemeChange={() => undefined} />,
+    );
+
+    expect(html).toContain("45 个检测头");
+    expect(html).toContain("NSSCTF");
+    expect(html).not.toContain("多个检测头使用英文逗号分隔");
   });
 
   it("selects the controlled version update section and delegates navigation", () => {

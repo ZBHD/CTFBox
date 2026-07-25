@@ -15,7 +15,11 @@ import { ParameterPanel } from "./components/workbench/ParameterPanel";
 import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import { buildCommand, type ToolParameters } from "./lib/commandBuilder";
 import { detectFlags } from "./lib/flagDetector";
-import { DEFAULT_FLAG_PREFIXES, loadFlagPrefixes, saveFlagPrefixes } from "./lib/flagPrefixPreference";
+import {
+  DEFAULT_FLAG_PREFIX_PREFERENCE,
+  loadFlagPrefixPreference,
+  saveFlagPrefixPreference,
+} from "./lib/flagPrefixPreference";
 import type { LocalAnalysisState } from "./lib/lsbTypes";
 import { getPlugin } from "./lib/pluginRegistry";
 import { createToolRunRequest } from "./lib/runnerProtocol";
@@ -44,7 +48,7 @@ interface HealthStatus {
 
 const DEFAULT_FLAG_SETTINGS: FlagSettings = {
   enabled: true,
-  prefixes: DEFAULT_FLAG_PREFIXES,
+  prefixes: DEFAULT_FLAG_PREFIX_PREFERENCE,
   scanOutput: true,
   scanStructured: true,
   scanBase64: true,
@@ -131,7 +135,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const [linkError, setLinkError] = useState<string>();
   const [flagSettings, setFlagSettings] = useState<FlagSettings>(() => ({
     ...DEFAULT_FLAG_SETTINGS,
-    prefixes: loadFlagPrefixes(),
+    prefixes: loadFlagPrefixPreference(),
   }));
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [tasks, setTasks] = useState<Record<string, TaskState>>({
@@ -244,7 +248,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   }, [theme]);
 
   useEffect(() => {
-    saveFlagPrefixes(flagSettings.prefixes);
+    saveFlagPrefixPreference(flagSettings.prefixes);
   }, [flagSettings.prefixes]);
 
   const startUpdateDownload = () => {
@@ -473,7 +477,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     }));
   };
 
-  const prefixes = flagSettings.prefixes.split(",").map((item) => item.trim()).filter(Boolean);
+  const prefixes = flagSettings.prefixes.enabled;
   const flagHits = taskFlagHits(task, flagSettings, prefixes);
   const activeAutomationRuns = task.runs.filter((run) => run.status === "running" && run.automationJobId).length;
   const updateAutomation = (updater: (current: AutomationState) => AutomationState) => {

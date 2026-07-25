@@ -9,6 +9,11 @@ import { ModeControls } from "./components/workbench/ModeControls";
 import { AutomationControls } from "./components/workbench/AutomationControls";
 import { ParameterPanel } from "./components/workbench/ParameterPanel";
 import { ResultsPanel } from "./components/workbench/ResultsPanel";
+import {
+  BUILT_IN_FLAG_PREFIXES,
+  FLAG_PREFIX_PREFERENCE_STORAGE_KEY,
+  FLAG_PREFIX_STORAGE_KEY,
+} from "./lib/flagPrefixPreference";
 import type { ToolStreamEvent } from "./state/taskStore";
 import {
   UpdateRelaunchError,
@@ -461,7 +466,14 @@ describe("App update integration", () => {
     expect(localStorage.clear).not.toHaveBeenCalled();
     expect(localStorage.removeItem).not.toHaveBeenCalled();
     expect(localStorage.setItem).toHaveBeenCalledWith("ctfbox.theme", "light");
-    expect(localStorage.setItem).toHaveBeenCalledWith("ctfbox.flagPrefixes", "flag, CTF");
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      FLAG_PREFIX_STORAGE_KEY,
+      BUILT_IN_FLAG_PREFIXES.join(", "),
+    );
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      FLAG_PREFIX_PREFERENCE_STORAGE_KEY,
+      JSON.stringify({ version: 1, enabled: [...BUILT_IN_FLAG_PREFIXES], custom: [] }),
+    );
   });
 
   it("isolates synchronous and asynchronous link failures from an available update", async () => {

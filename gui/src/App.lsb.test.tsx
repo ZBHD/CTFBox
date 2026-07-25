@@ -4,6 +4,7 @@ import App, { type AppUpdateAdapter } from "./App";
 import { ToolRail } from "./components/ToolRail";
 import { MiscWorkbench } from "./components/processing/MiscWorkbench";
 import { DEFAULT_LSB_PARAMETERS } from "./lib/lsbEngine";
+import { BUILT_IN_FLAG_PREFIXES } from "./lib/flagPrefixPreference";
 import type { LsbLocalAnalysis } from "./lib/lsbTypes";
 import { DEFAULT_STEGO_OPTIONS } from "./lib/stegoAnalyzer";
 import type { StegoLocalAnalysis } from "./lib/stegoTypes";
@@ -94,7 +95,7 @@ describe("App LSB task integration", () => {
     act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "misc", mode: "lsb" }));
     const workbench = renderer.root.findByType(MiscWorkbench);
 
-    expect(workbench.props.flagPrefixes).toEqual(["flag", "CTF"]);
+    expect(workbench.props.flagPrefixes).toEqual([...BUILT_IN_FLAG_PREFIXES]);
     expect(workbench.props.flagCaseSensitive).toBe(false);
     expect(workbench.props.flagEnabled).toBe(true);
   });

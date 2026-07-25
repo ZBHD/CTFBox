@@ -1,0 +1,57 @@
+.flag-prefix-list-field { border-bottom: 1px solid var(--border-soft); background: #0d1419; }
+.flag-prefix-list-heading { min-height: 61px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 16px; border-bottom: 1px solid var(--border-soft); }
+.flag-prefix-list-heading > div { display: flex; min-width: 0; flex-direction: column; }
+.flag-prefix-list-heading strong { color: #b9c5cd; font-size: 10px; font-weight: 580; }
+.flag-prefix-list-heading span { margin-top: 4px; color: #65737e; font-size: 9px; }
+.flag-prefix-add { height: 29px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #356b58; border-radius: 3px; color: #76d7b3; background: #13261f; font-size: 9px; cursor: pointer; }
+.flag-prefix-tools { min-height: 45px; display: grid; grid-template-columns: minmax(180px, 1fr) auto; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--border-soft); background: #0f171c; }
+.flag-prefix-search { height: 30px; display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 4px; padding: 0 8px; border: 1px solid #2b3842; border-radius: 3px; color: #5f707b; background: #090f13; }
+.flag-prefix-search input { min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; color: #cad5dc; background: transparent; font: 9px "Cascadia Mono", Consolas, monospace; }
+.flag-prefix-search input::placeholder { color: #46535d; }
+.flag-prefix-all { display: flex; align-items: center; gap: 8px; }
+.flag-prefix-all > span { min-width: 62px; color: #61717b; font: 8px "Cascadia Mono", Consolas, monospace; text-align: right; }
+.flag-prefix-all > label { color: #82919a; font-size: 9px; }
+.flag-prefix-create { display: grid; grid-template-columns: minmax(0, 1fr) auto 29px; gap: 6px; padding: 8px 16px; border-bottom: 1px solid #2b3a42; background: #111c21; }
+.flag-prefix-create > input { min-width: 0; height: 29px; padding: 0 8px; border: 1px solid #38505b; border-radius: 3px; outline: 0; color: #d2dce1; background: #090f13; font: 9px "Cascadia Mono", Consolas, monospace; }
+.flag-prefix-create > input[aria-invalid="true"] { border-color: #8c4850; }
+.flag-prefix-create > button[type="submit"] { height: 29px; padding: 0 9px; border: 1px solid #3d765f; border-radius: 3px; color: #75d5b1; background: #14281f; font-size: 9px; cursor: pointer; }
+.flag-prefix-error { grid-column: 1 / -1; color: #e58c94; font-size: 9px; }
+.flag-prefix-items { max-height: 300px; overflow-y: auto; scrollbar-color: #354650 #0b1116; }
+.flag-prefix-item { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 16px; border-bottom: 1px solid #1b272e; background: #0d1419; }
+.flag-prefix-item:last-child { border-bottom: 0; }
+.flag-prefix-item:hover { background: #111a20; }
+.flag-prefix-item code { min-width: 0; overflow: hidden; color: #cbd6dc; font: 9px "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.flag-prefix-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.flag-prefix-icon { width: 29px; height: 29px; display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 3px; color: #687983; background: transparent; cursor: pointer; }
+.flag-prefix-icon:hover { border-color: #56363c; color: #de8089; background: #24171b; }
+.flag-prefix-toggle { margin: 0; }
+.flag-prefix-empty { min-height: 72px; display: grid; place-items: center; color: #596974; font-size: 9px; }
+.flag-prefix-list-field button:focus-visible,
+.flag-prefix-search:focus-within,
+.flag-prefix-create > input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+:root[data-theme="light"] .flag-prefix-list-field { border-color: #dce4e6; background: #ffffff; }
+:root[data-theme="light"] .flag-prefix-list-heading,
+:root[data-theme="light"] .flag-prefix-tools { border-color: #dce4e6; background: #f7f9fa; }
+:root[data-theme="light"] .flag-prefix-list-heading strong { color: #354850; }
+:root[data-theme="light"] .flag-prefix-list-heading span,
+:root[data-theme="light"] .flag-prefix-all > span,
+:root[data-theme="light"] .flag-prefix-all > label { color: #687b84; }
+:root[data-theme="light"] .flag-prefix-add,
+:root[data-theme="light"] .flag-prefix-create > button[type="submit"] { border-color: #7eb39f; color: #075f45; background: #dcefe8; }
+:root[data-theme="light"] .flag-prefix-search,
+:root[data-theme="light"] .flag-prefix-create > input { border-color: #c8d3d7; color: #25363e; background: #ffffff; }
+:root[data-theme="light"] .flag-prefix-search input { color: #25363e; }
+:root[data-theme="light"] .flag-prefix-search input::placeholder { color: #8999a0; }
+:root[data-theme="light"] .flag-prefix-create { border-color: #d3dde0; background: #eef4f2; }
+:root[data-theme="light"] .flag-prefix-item { border-color: #e4eaec; background: #ffffff; }
+:root[data-theme="light"] .flag-prefix-item:hover { background: #f2f7f5; }
+:root[data-theme="light"] .flag-prefix-item code { color: #354850; }
+:root[data-theme="light"] .flag-prefix-icon { color: #687b84; }
+:root[data-theme="light"] .flag-prefix-icon:hover { border-color: #ddb7bb; color: #a13743; background: #fff1f2; }
+:root[data-theme="light"] .flag-prefix-error { color: #a13743; }
+
+@media (max-width: 1100px) {
+  .flag-prefix-tools { grid-template-columns: minmax(150px, 1fr) auto; }
+  .flag-prefix-all > span { display: none; }
+}

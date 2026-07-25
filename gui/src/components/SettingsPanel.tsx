@@ -12,12 +12,14 @@ import {
   SunMoon,
 } from "lucide-react";
 import { useState } from "react";
+import type { FlagPrefixPreference } from "../lib/flagPrefixPreference";
 import { formatUpdateError, type UpdateState } from "../lib/updateManager";
 import type { Theme } from "../lib/themePreference";
+import { FlagPrefixList } from "./FlagPrefixList";
 
 export interface FlagSettings {
   enabled: boolean;
-  prefixes: string;
+  prefixes: FlagPrefixPreference;
   scanOutput: boolean;
   scanStructured: boolean;
   scanBase64: boolean;
@@ -311,10 +313,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
         <section className="settings-section" hidden={section !== "flags"}>
           <div className="settings-section-title"><div><h2>Flag 识别</h2><p>从终端回显和结构化结果中识别匹配字段</p></div><Toggle checked={value.enabled} onChange={(next) => update("enabled", next)} /></div>
-          <div className="settings-row settings-row-field">
-            <label htmlFor="flag-prefixes"><strong>检测头</strong><span>多个检测头使用英文逗号分隔</span></label>
-            <input id="flag-prefixes" value={value.prefixes} onChange={(event) => update("prefixes", event.target.value)} placeholder="flag, CTF" />
-          </div>
+          <FlagPrefixList value={value.prefixes} onChange={(next) => update("prefixes", next)} />
           <div className="settings-row"><div><strong>检测终端回显</strong><span>扫描每次运行产生的文本输出</span></div><Toggle checked={value.scanOutput} onChange={(next) => update("scanOutput", next)} /></div>
           <div className="settings-row"><div><strong>检测结构化字段</strong><span>扫描数据库、列名和解码结果</span></div><Toggle checked={value.scanStructured} onChange={(next) => update("scanStructured", next)} /></div>
           <div className="settings-row"><div><strong>检测 Base64 编码</strong><span>解码疑似 Base64 文本后匹配 Flag 检测头</span></div><Toggle checked={value.scanBase64} onChange={(next) => update("scanBase64", next)} /></div>

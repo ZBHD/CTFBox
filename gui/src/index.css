@@ -536,6 +536,7 @@ body { font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] .update-ready-dialog > p { color: #566a74; }
 :root[data-theme="light"] .update-ready-secondary { border-color: #c6d1d5; color: #536771; background: #f3f6f7; }
 :root[data-theme="light"] .update-ready-secondary:hover { border-color: #72aa95; color: #086b4b; background: #dcefe8; }
+:root[data-theme="light"] .update-ready-primary:focus-visible, :root[data-theme="light"] .update-ready-secondary:focus-visible { outline-color: #237f99; }
 :root[data-theme="light"] .brand strong,
 :root[data-theme="light"] .workspace-identity h1,
 :root[data-theme="light"] .settings-header h1,

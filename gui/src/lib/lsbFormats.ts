@@ -1,4 +1,5 @@
 import { detectFlags } from "./flagDetector";
+import { unpackArchive } from "./lsbArchive";
 import type { LsbExtractedFile } from "./lsbTypes";
 
 interface FileFormat {
@@ -162,6 +163,16 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
     const format = FORMATS.find((item) => item.mediaType === file.mediaType);
     score += file.offset === 0 ? 55 : 40;
     evidence.push(`识别到 ${format?.label ?? file.mediaType} 文件（偏移 ${file.offset}）`);
+    if (file.mediaType === "application/zip" || file.mediaType === "application/gzip") {
+      file.children = unpackArchive(file.bytes, file.mediaType);
+      for (const child of file.children) {
+        if (!child.text) continue;
+        for (const hit of detectFlags(child.text, prefixes, caseSensitive)) {
+          score += 100;
+          evidence.push(`归档内发现 Flag：${hit.text}`);
+        }
+      }
+    }
   }
 
   if (bytes.length > 0) {

@@ -144,14 +144,15 @@ class InstallerConfigTests(unittest.TestCase):
             '$downloadUrl = "$repositoryUrl/releases/download/$tag/$($updater.Name)"',
             release_step,
         )
-
-        expected_assets = (
-            "$asset.FullName",
-            '"SHA256SUMS.txt"',
-            "$updater.FullName",
-            "$signatureAsset.FullName",
-            '"latest.json"',
+        self.assertRegex(
+            release_step,
+            r'(?m)^\s{16}signature\s*=\s*\$signature$',
         )
+        self.assertRegex(
+            release_step,
+            r'(?m)^\s{16}url\s*=\s*\$downloadUrl$',
+        )
+
         self.assertRegex(
             release_step,
             re.compile(
@@ -160,7 +161,20 @@ class InstallerConfigTests(unittest.TestCase):
                 re.DOTALL,
             ),
         )
-        for command_name in ("upload", "create"):
+        expected_commands = {
+            "upload": (
+                'gh release upload $tag $asset.FullName "SHA256SUMS.txt" '
+                '$updater.FullName $signatureAsset.FullName "latest.json" '
+                '--repo $env:GITHUB_REPOSITORY --clobber'
+            ),
+            "create": (
+                'gh release create $tag $asset.FullName "SHA256SUMS.txt" '
+                '$updater.FullName $signatureAsset.FullName "latest.json" '
+                '--repo $env:GITHUB_REPOSITORY --draft --title "CTFBox $tag" '
+                '--generate-notes --verify-tag'
+            ),
+        }
+        for command_name, expected_command in expected_commands.items():
             command_match = re.search(
                 rf"(?m)^\s{{10,}}gh release {command_name}\b[^\r\n]*$",
                 release_step,
@@ -168,12 +182,7 @@ class InstallerConfigTests(unittest.TestCase):
             self.assertIsNotNone(
                 command_match, f"gh release {command_name} command missing"
             )
-            command = command_match.group(0)
-            for asset in expected_assets:
-                self.assertIn(asset, command)
-            self.assertNotRegex(command, r"setup\.exe\.sig")
-            required_mode = "--clobber" if command_name == "upload" else "--draft"
-            self.assertIn(required_mode, command)
+            self.assertEqual(command_match.group(0).strip(), expected_command)
 
     def test_nsis_supports_custom_directory_and_creates_desktop_shortcut(self):
         config_path = ROOT / "gui" / "src-tauri" / "tauri.conf.json"

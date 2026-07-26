@@ -522,7 +522,14 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
         continue;
       }
       if (active === 0 && pending.length === 0) {
-        setAutomations((current) => ({ ...current, [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), phase: "completed" } }));
+        const failed = [...started].some((jobId) => {
+          const latestRun = taskSnapshot.runs.slice().reverse().find((run) => run.automationJobId === jobId);
+          return latestRun?.status === "failed";
+        });
+        setAutomations((current) => ({
+          ...current,
+          [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), phase: failed ? "failed" : "completed" },
+        }));
       }
     }
   }, [automations, flagSettings, prefixes, runWithTaskParameters, stopAutomationForTask, tasks]);

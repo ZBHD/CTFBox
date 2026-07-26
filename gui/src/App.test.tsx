@@ -755,6 +755,30 @@ describe("App update integration", () => {
     expect(searches.every((argumentsList) => argumentsList.includes("-S") && argumentsList.includes("--no-color"))).toBe(true);
   });
 
+  it("marks automation as failed when its final subtask fails", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(AutomationControls).props.onStart());
+    await flush();
+
+    const runCall = invokeMock.mock.calls.find(([command]) => command === "run_tool");
+    const first = runCall?.[1] as { request: { runId: string }; onEvent: { onmessage?: (event: ToolStreamEvent) => void } };
+    act(() => {
+      first.onEvent.onmessage?.({ event: "exit", runId: first.request.runId, status: "failed", code: 1 });
+    });
+    await flush();
+
+    expect(renderer.root.findByType(AutomationControls).props.phase).toBe("failed");
+    expect(textContent(renderer.root)).toContain("自动化失败");
+    expect(textContent(renderer.root)).not.toContain("自动化完成");
+  });
+
   it("stops the automation queue when the shared stop control is used", async () => {
     const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
     invokeMock.mockReset();

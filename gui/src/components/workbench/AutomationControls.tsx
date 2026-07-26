@@ -1,6 +1,6 @@
 import { Gauge, Play, Square } from "lucide-react";
 
-export type AutomationPhase = "idle" | "running" | "stopped" | "completed" | "flag-found";
+export type AutomationPhase = "idle" | "running" | "stopped" | "completed" | "failed" | "flag-found";
 
 interface AutomationControlsProps {
   phase: AutomationPhase;
@@ -22,7 +22,7 @@ export function AutomationControls({
   onStop,
 }: AutomationControlsProps) {
   const running = phase === "running";
-  const label = phase === "flag-found" ? "已命中 Flag" : phase === "completed" ? "自动化完成" : phase === "stopped" ? "已停止" : "准备就绪";
+  const label = phase === "flag-found" ? "已命中 Flag" : phase === "completed" ? "自动化完成" : phase === "failed" ? "自动化失败" : phase === "stopped" ? "已停止" : "准备就绪";
   return (
     <section className="automation-controls" aria-label="自动找 Flag">
       <div className="automation-summary">

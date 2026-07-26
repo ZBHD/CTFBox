@@ -1,3 +1,4 @@
+import type { AudioLocalAnalysis } from "./audioTypes";
 import type { StegoLocalAnalysis } from "./stegoTypes";
 import type { ZipLocalAnalysis } from "./zipTypes";
 
@@ -82,4 +83,4 @@ export interface LsbLocalAnalysis {
   error?: string;
 }
 
-export type LocalAnalysisState = LsbLocalAnalysis | StegoLocalAnalysis | ZipLocalAnalysis;
+export type LocalAnalysisState = LsbLocalAnalysis | StegoLocalAnalysis | ZipLocalAnalysis | AudioLocalAnalysis;

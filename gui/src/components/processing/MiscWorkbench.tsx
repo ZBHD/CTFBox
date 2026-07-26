@@ -1,9 +1,11 @@
 import { Download, FileAudio, FileImage, FileUp, Play, RotateCcw, ScanSearch } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
+import type { AudioLocalAnalysis } from "../../lib/audioTypes";
 import type { LocalAnalysisState, LsbLocalAnalysis } from "../../lib/lsbTypes";
 import type { StegoLocalAnalysis } from "../../lib/stegoTypes";
 import type { ZipLocalAnalysis } from "../../lib/zipTypes";
+import { AudioStegoWorkbench } from "./AudioStegoWorkbench";
 import { FakeEncryptionWorkbench } from "./FakeEncryptionWorkbench";
 import { LsbWorkbench } from "./LsbWorkbench";
 import { StegoWorkbench } from "./StegoWorkbench";
@@ -50,6 +52,7 @@ export function MiscWorkbench({ mode, parameters, onChange, onClear, analysis, f
   if (mode === "lsb") return <LsbWorkbench analysis={analysis as LsbLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
   if (mode === "image") return <StegoWorkbench analysis={analysis as StegoLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
   if (mode === "fake-encryption") return <FakeEncryptionWorkbench analysis={analysis as ZipLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
+  if (mode === "audio") return <AudioStegoWorkbench analysis={analysis as AudioLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
   const meta = MODE_META[mode] ?? MODE_META.image;
   const fileName = String(parameters.fileName ?? "");
   const dataUrl = String(parameters.dataUrl ?? "");
@@ -82,12 +85,6 @@ export function MiscWorkbench({ mode, parameters, onChange, onClear, analysis, f
           <div className="asset-stage-content">
             <FileDropZone mode={mode} fileName={fileName} accept={meta.accept} onFile={loadFile} />
             {(mode === "lsb" || mode === "image") && dataUrl && <div className="image-preview"><img src={dataUrl} alt="待分析图片预览" /></div>}
-            {mode === "audio" && <div className="audio-preview">
-              <div className={parameters.view === "spectrum" ? "audio-visual spectrum" : "audio-visual waveform"} aria-label="音频可视化">
-                {Array.from({ length: 48 }, (_, index) => <span key={index} style={{ height: `${18 + ((index * 17) % 68)}%` }} />)}
-              </div>
-              {dataUrl && <audio controls src={dataUrl} />}
-            </div>}
           </div>
         </section>
 
@@ -119,11 +116,6 @@ export function MiscWorkbench({ mode, parameters, onChange, onClear, analysis, f
               <OptionRow title="可打印字符串" description="提取连续可见字符和编码文本" active={Boolean(parameters.strings)} onClick={() => onChange("strings", !parameters.strings)} />
             </div>}
 
-            {mode === "audio" && <>
-              <div className="inspector-group"><span className="inspector-label">视图</span><div className="channel-options"><ToggleButton active={parameters.view !== "spectrum"} onClick={() => onChange("view", "waveform")}>波形</ToggleButton><ToggleButton active={parameters.view === "spectrum"} onClick={() => onChange("view", "spectrum")}>频谱</ToggleButton></div></div>
-              <div className="inspector-group"><span className="inspector-label">声道</span><div className="channel-options">{["双声道", "左声道", "右声道", "差分"].map((label, index) => <ToggleButton key={label} active={String(parameters.audioChannel ?? "0") === String(index)} onClick={() => onChange("audioChannel", String(index))}>{label}</ToggleButton>)}</div></div>
-              <label className="inline-control stacked"><span>频率范围（Hz）</span><div className="range-pair"><input type="number" value={String(parameters.minFrequency ?? "0")} onChange={setSingle("minFrequency")} /><input type="number" value={String(parameters.maxFrequency ?? "22050")} onChange={setSingle("maxFrequency")} /></div></label>
-            </>}
           </div>
         </section>
 

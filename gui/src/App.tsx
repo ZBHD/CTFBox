@@ -325,6 +325,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const plugin = getPlugin(selection.toolId) ?? getPlugin("sqlmap")!;
   const isWebshell = plugin.category === "web" && plugin.runner?.kind === "session";
   const isWebTool = plugin.category === "web" && plugin.runner !== undefined && !isWebshell;
+  const supportsFlagHunt = plugin.capabilities?.includes("flag-hunt") ?? false;
   const command = useMemo(
     () => isWebTool ? buildCommand(selection.toolId, task.edition, task.parameters as ToolParameters) : [],
     [isWebTool, selection.toolId, task.edition, task.parameters],
@@ -497,7 +498,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     stopAutomationForTask(key, task);
   };
   const startAutomation = () => {
-    if (!canRun || task.runs.some((run) => run.status === "running")) return;
+    if (!supportsFlagHunt || !canRun || task.runs.some((run) => run.status === "running")) return;
     automationJobsRef.current[key] = new Set();
     updateAutomation((current) => ({ ...current, phase: "running", started: 0 }));
   };
@@ -506,7 +507,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     for (const [taskKey, automationState] of Object.entries(automations)) {
       if (automationState.phase !== "running") continue;
       const taskSnapshot = tasks[taskKey];
-      if (!taskSnapshot || getPlugin(taskSnapshot.toolId)?.category !== "web" || !getPlugin(taskSnapshot.toolId)?.runner) continue;
+      const taskPlugin = taskSnapshot ? getPlugin(taskSnapshot.toolId) : undefined;
+      if (!taskSnapshot || !taskPlugin?.capabilities?.includes("flag-hunt")) continue;
       if (flagSettings.pauseOnMatch && flagScannerRef.current.scan(taskKey, taskSnapshot, flagSettings, prefixes).length > 0) {
         stopAutomationForTask(taskKey, taskSnapshot, "flag-found");
         continue;
@@ -595,7 +597,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
             onRun={runCommand}
             onClear={clearCurrentTask}
           />
-          {isWebTool && <AutomationControls
+          {supportsFlagHunt && <AutomationControls
             phase={automation.phase}
             concurrency={automation.concurrency}
             active={activeAutomationRuns}

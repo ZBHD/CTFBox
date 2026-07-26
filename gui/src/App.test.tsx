@@ -716,6 +716,26 @@ describe("App update integration", () => {
     ]);
   });
 
+  it("only shows automatic Flag hunting for tools that declare the capability", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+
+    expect(renderer.root.findAllByType(AutomationControls)).toHaveLength(1);
+
+    act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "sstimap" }));
+    expect(renderer.root.findAllByType(AutomationControls)).toHaveLength(1);
+
+    for (const toolId of ["dirsearch", "subfinder", "nuclei", "webshell"]) {
+      act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId }));
+      expect(renderer.root.findAllByType(AutomationControls), toolId).toHaveLength(0);
+    }
+  });
+
   it("automatically advances SSTImap discovery into bounded flag searches", async () => {
     const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
     invokeMock.mockReset();

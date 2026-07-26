@@ -46,3 +46,13 @@ describe("image and file steganography workbench styles", () => {
     expect(css).toMatch(/@media \(max-width: 600px\)[\s\S]*\.stego-visual-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
   });
 });
+
+describe("automatic Flag hunting controls", () => {
+  it("uses the shared workbench surfaces in both themes", () => {
+    const rule = css.match(/\.automation-controls\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(rule).toContain("margin: 0");
+    expect(rule).toContain("border-bottom: 1px solid var(--border)");
+    expect(rule).toContain("background: var(--surface-2)");
+    expect(rule).not.toMatch(/background:\s*#[0-9a-f]{3,8}/i);
+  });
+});

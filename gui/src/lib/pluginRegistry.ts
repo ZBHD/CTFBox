@@ -3,6 +3,7 @@ import registryJson from "../../../tools/tool_registry.json";
 
 export type PluginCategory = "web" | "crypto" | "misc";
 export type PluginEdition = "original" | "cn";
+export type PluginCapability = "flag-hunt";
 
 export type PluginRunner =
   | { kind: "python"; launcher: string; sourceDirectory: string; entry: string }
@@ -14,6 +15,7 @@ export interface ToolPlugin {
   category: PluginCategory;
   name: string;
   description: string;
+  capabilities?: readonly PluginCapability[];
   editions?: readonly PluginEdition[];
   runner?: PluginRunner;
 }
@@ -43,6 +45,7 @@ const registrySchema = z.object({
     category: z.enum(["web", "crypto", "misc"]),
     name: z.string().min(1),
     description: z.string().min(1),
+    capabilities: z.array(z.literal("flag-hunt")).optional(),
     editions: z.array(z.enum(["original", "cn"])).optional(),
     runner: z.discriminatedUnion("kind", [pythonRunner, binaryRunner, sessionRunner]).optional(),
   })),

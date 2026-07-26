@@ -176,13 +176,13 @@ textarea:-webkit-autofill:focus {
 .finding-row > span { color: var(--muted); font-size: 9px; }
 .finding-row strong { overflow-wrap: anywhere; color: #cad5dc; font: 10px "Cascadia Mono", Consolas, monospace; }
 mark { padding: 1px 3px; color: #11140b; background: #f0c85c; }
-.automation-controls { display: flex; align-items: center; gap: 10px; min-height: 54px; margin-bottom: 12px; padding: 9px 12px; border: 1px solid #345667; border-radius: 5px; background: #101c23; }
-.automation-summary { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; color: #6dd3df; }
+.automation-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; min-height: 52px; margin: 0; padding: 8px 14px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: var(--surface-2); }
+.automation-summary { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; color: var(--cyan); }
 .automation-summary > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.automation-summary strong { color: #d8e5e8; font-size: 13px; }
-.automation-summary span { overflow: hidden; color: #8fa8b0; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.automation-concurrency { display: flex; align-items: center; gap: 5px; color: #8fa8b0; font-size: 11px; }
-.automation-concurrency input { width: 44px; padding: 4px 5px; border: 1px solid #3b5561; border-radius: 3px; color: #d8e5e8; background: #0b1217; font: inherit; }
+.automation-summary strong { color: var(--text); font-size: 13px; }
+.automation-summary span { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.automation-concurrency { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.automation-concurrency input { width: 44px; padding: 4px 5px; border: 1px solid var(--border); border-radius: 3px; color: var(--text); background: var(--surface); font: inherit; }
 .suggestions { margin-top: 12px; }
 .suggestions > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: 9px; }
 .suggestions button { margin: 0 6px 6px 0; padding: 5px 8px; border: 1px solid #345667; border-radius: 3px; color: #8ac6d9; background: #12212a; font-size: 9px; cursor: pointer; }

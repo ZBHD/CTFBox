@@ -6,6 +6,7 @@
       "category": "web",
       "name": "SQLmap",
       "description": "SQL 注入检测与数据枚举",
+      "capabilities": ["flag-hunt"],
       "editions": ["original", "cn"],
       "runner": {
         "kind": "python",
@@ -19,6 +20,7 @@
       "category": "web",
       "name": "SSTImap",
       "description": "模板注入检测与利用",
+      "capabilities": ["flag-hunt"],
       "editions": ["original", "cn"],
       "runner": {
         "kind": "python",

@@ -31,6 +31,25 @@
 喂给 `parse_response`。**验证范围**：请求编解码、AES 与 PKCS7、参数嵌入/转义、
 客户端结果解析。**未验证范围**：目标侧 PHP/JSP/ASPX 语句本身的正确性（需真实解释器/靶机）。
 
+## 真机 E2E 联调（PHP）
+
+`_e2e_php/` 提供最小的真实 PHP shell 与驱动器：
+
+- `shell_behinder.php`：冰蝎 v3 兼容 shell（`openssl_decrypt` + `eval`，默认密码 `rebeyond`）
+- `shell_antsword.php`：蚁剑兼容 shell（`eval($_POST['pass'])`）
+- `run_e2e.py`：启动 `php -S 127.0.0.1:<free>` 后，用真实 `BehinderProtocol` /
+  `AntSwordProtocol` 依次跑 sysinfo/exec/list/write/read/delete 全套
+
+跑法：
+
+```powershell
+$env:CTFBOX_PHP = "path\to\php.exe"    # 或让 PATH 上就有 php
+python -m pytest tools/clients/webshell/test_e2e_php.py -v
+```
+
+未设置且 PATH 无 `php` 时自动跳过；有 PHP 时会真起服务、真做 HTTP、真过一遍解密与 eval，
+验证 Python 侧编解码与真实 PHP 8.4.x `openssl_encrypt/openssl_decrypt` 完全互通。
+
 ## 扩展协议
 
 新增一种 webshell 协议：

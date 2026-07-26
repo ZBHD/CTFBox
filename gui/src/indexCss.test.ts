@@ -55,4 +55,8 @@ describe("automatic Flag hunting controls", () => {
     expect(rule).toContain("background: var(--surface-2)");
     expect(rule).not.toMatch(/background:\s*#[0-9a-f]{3,8}/i);
   });
+
+  it("keeps four-digit automation limits readable", () => {
+    expect(css).toMatch(/\.automation-concurrency input\s*\{[^}]*width:\s*64px/s);
+  });
 });

@@ -1,0 +1,3 @@
+# JPEG Steganography Challenge
+# suspicious.jpg uses JSteg to hide data.
+# Describe the detailed extraction process.

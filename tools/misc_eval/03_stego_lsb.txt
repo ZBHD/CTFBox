@@ -1,0 +1,5 @@
+# Image Steganography Challenge
+# A 2x4 pixel image has these RGB hex values:
+# ff0000 fe0100 ff0000 fe0101 ff0001 fe0100 ff0000 fe0101
+# Each pixel's Red channel LSB contains one bit of the flag.
+# Extract the hidden message.

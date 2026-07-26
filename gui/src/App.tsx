@@ -60,10 +60,18 @@ const IDLE_UPDATE_STATE: UpdateState = {
 interface AutomationState {
   phase: AutomationPhase;
   concurrency: number;
+  timeoutSeconds: number;
+  maxSqlmapDumps: number;
   started: number;
 }
 
-const IDLE_AUTOMATION: AutomationState = { phase: "idle", concurrency: 3, started: 0 };
+const IDLE_AUTOMATION: AutomationState = {
+  phase: "idle",
+  concurrency: 3,
+  timeoutSeconds: 180,
+  maxSqlmapDumps: 10,
+  started: 0,
+};
 
 const GITHUB_URL = "https://github.com/ZBHD/CTFBox";
 const RELEASE_NOTES_URL = `${GITHUB_URL}/releases/latest`;
@@ -136,6 +144,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const installedRef = useRef(false);
   const linkSequenceRef = useRef(0);
   const automationJobsRef = useRef<Record<string, Set<string>>>({});
+  const automationTimeoutsRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const streamEventBatcherRef = useRef<StreamEventBatcher<ToolStreamEvent>>();
   streamEventBatcherRef.current ??= new StreamEventBatcher((events) => {
     setTasks((current) => events.reduce((next, event) => updateTaskContainingRun(
@@ -365,7 +374,19 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     updateCurrentTask((current) => ({ ...current, localAnalysis: analysis }));
   };
 
-  const runWithTaskParameters = useCallback((taskKey: string, taskSnapshot: TaskState, parameters: ToolParameters, automationJob?: AutomationJob) => {
+  const clearAutomationTimeout = useCallback((runId: string) => {
+    const timeout = automationTimeoutsRef.current.get(runId);
+    if (timeout === undefined) return;
+    clearTimeout(timeout);
+    automationTimeoutsRef.current.delete(runId);
+  }, []);
+
+  useEffect(() => () => {
+    for (const timeout of automationTimeoutsRef.current.values()) clearTimeout(timeout);
+    automationTimeoutsRef.current.clear();
+  }, []);
+
+  const runWithTaskParameters = useCallback((taskKey: string, taskSnapshot: TaskState, parameters: ToolParameters, automationJob?: AutomationJob, timeoutSeconds?: number) => {
     if (!getPlugin(taskSnapshot.toolId)?.runner) return;
     if (!automationJob && taskSnapshot.status === "running") return;
     const nextCommand = buildCommand(taskSnapshot.toolId, taskSnapshot.edition, parameters);
@@ -405,14 +426,31 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     });
     const onEvent = new Channel<ToolStreamEvent>();
     onEvent.onmessage = (event) => {
+      if (event.event === "exit") clearAutomationTimeout(event.runId);
       streamEventBatcherRef.current?.push(event);
     };
+    if (automationJob && timeoutSeconds) {
+      const limit = Math.max(30, Math.min(1800, Math.floor(timeoutSeconds)));
+      const timeout = setTimeout(() => {
+        automationTimeoutsRef.current.delete(id);
+        setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
+          appendOutput(owner, id, `\n自动化子任务已达到 ${limit} 秒时限，正在停止。\n`),
+        ));
+        void invoke("stop_tool", { runId: id }).catch((error) => {
+          setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
+            appendOutput(owner, id, `\n超时停止失败：${error instanceof Error ? error.message : String(error)}\n`),
+          ));
+        });
+      }, limit * 1000);
+      automationTimeoutsRef.current.set(id, timeout);
+    }
     void invoke("run_tool", { request, onEvent }).catch((error) => {
+      clearAutomationTimeout(id);
       setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
         finishRun(appendOutput(owner, id, `\n执行失败：${error instanceof Error ? error.message : String(error)}\n`), id, "failed"),
       ));
     });
-  }, []);
+  }, [clearAutomationTimeout]);
 
   const runWithParameters = (parameters: ToolParameters, automationJob?: AutomationJob) => {
     runWithTaskParameters(key, task, parameters, automationJob);
@@ -425,6 +463,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
         setAutomations((current) => ({ ...current, [key]: { ...(current[key] ?? IDLE_AUTOMATION), phase: "stopped" } }));
       }
       for (const activeRun of task.runs.filter((run) => run.status === "running")) {
+        clearAutomationTimeout(activeRun.id);
         void invoke("stop_tool", { runId: activeRun.id }).catch((error) => {
           setTasks((current) => updateTaskContainingRun(current, activeRun.id, (owner) =>
             appendOutput(owner, activeRun.id, `\n停止失败：${error instanceof Error ? error.message : String(error)}\n`),
@@ -456,6 +495,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     automationJobsRef.current[taskKey]?.clear();
     setAutomations((current) => ({ ...current, [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), phase: "stopped", started: 0 } }));
     const activeRuns = task.runs.filter((run) => run.status === "running");
+    activeRuns.forEach((run) => clearAutomationTimeout(run.id));
     const clear = () => setTasks((current) => {
       const currentTask = current[taskKey];
       return currentTask ? { ...current, [taskKey]: clearTask(currentTask) } : current;
@@ -491,9 +531,10 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     automationJobsRef.current[taskKey]?.clear();
     setAutomations((current) => ({ ...current, [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), phase } }));
     for (const run of taskSnapshot.runs.filter((item) => item.status === "running" && item.automationJobId)) {
+      clearAutomationTimeout(run.id);
       void invoke("stop_tool", { runId: run.id }).catch(() => undefined);
     }
-  }, []);
+  }, [clearAutomationTimeout]);
   const stopAutomation = () => {
     stopAutomationForTask(key, task);
   };
@@ -515,7 +556,9 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
       }
       const started = automationJobsRef.current[taskKey] ?? new Set<string>();
       automationJobsRef.current[taskKey] = started;
-      const jobs = buildAutomationJobs(taskSnapshot.toolId, taskSnapshot.parameters as ToolParameters, taskSnapshot.findings, prefixes);
+      const jobs = buildAutomationJobs(taskSnapshot.toolId, taskSnapshot.parameters as ToolParameters, taskSnapshot.findings, prefixes, {
+        maxSqlmapDumps: automationState.maxSqlmapDumps,
+      });
       const pending = jobs.filter((job) => !started.has(job.id));
       const active = taskSnapshot.runs.filter((run) => run.status === "running" && run.automationJobId).length;
       const capacity = Math.max(0, automationState.concurrency - active);
@@ -523,7 +566,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
         const next = pending.slice(0, capacity);
         next.forEach((job) => started.add(job.id));
         setAutomations((current) => ({ ...current, [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), started: started.size } }));
-        next.forEach((job) => runWithTaskParameters(taskKey, taskSnapshot, job.parameters, job));
+        next.forEach((job) => runWithTaskParameters(taskKey, taskSnapshot, job.parameters, job, automationState.timeoutSeconds));
         continue;
       }
       if (active === 0 && pending.length === 0) {
@@ -598,11 +641,17 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
             onClear={clearCurrentTask}
           />
           {supportsFlagHunt && <AutomationControls
+            toolId={selection.toolId}
             phase={automation.phase}
             concurrency={automation.concurrency}
+            timeoutSeconds={automation.timeoutSeconds}
+            maxSqlmapDumps={automation.maxSqlmapDumps}
+            databaseScope={String(task.parameters.database ?? "").trim() || undefined}
             active={activeAutomationRuns}
             started={automation.started}
             onConcurrencyChange={(concurrency) => updateAutomation((current) => ({ ...current, concurrency }))}
+            onTimeoutChange={(timeoutSeconds) => updateAutomation((current) => ({ ...current, timeoutSeconds }))}
+            onMaxSqlmapDumpsChange={(maxSqlmapDumps) => updateAutomation((current) => ({ ...current, maxSqlmapDumps }))}
             onStart={startAutomation}
             onStop={stopAutomation}
           />}

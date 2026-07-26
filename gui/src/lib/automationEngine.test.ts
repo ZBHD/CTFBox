@@ -19,6 +19,21 @@ describe("web tool automation planner", () => {
     expect(jobs.at(-1)?.parameters).toMatchObject({ database: "app", table: "flags", dump: true, batch: true });
   });
 
+  it("scopes SQLmap jobs to the selected database and caps automatic exports", () => {
+    const jobs = buildAutomationJobs("sqlmap", { url: "TARGET_URL", database: "app" }, [
+      { kind: "database", value: "app" },
+      { kind: "database", value: "audit" },
+      { kind: "table", value: "users", database: "app" },
+      { kind: "table", value: "flags", database: "app" },
+      { kind: "table", value: "events", database: "audit" },
+    ], ["flag", "CTF"], { maxSqlmapDumps: 1 });
+
+    expect(jobs.map((job) => job.id)).toEqual([
+      "sqlmap-tables-app",
+      "sqlmap-dump-app-flags",
+    ]);
+  });
+
   it("starts SSTImap discovery then schedules bounded read-only flag searches after shell capability is found", () => {
     const jobs = buildAutomationJobs("sstimap", { url: "TARGET_URL" }, [
       { kind: "engine", value: "Jinja2" },
@@ -36,6 +51,17 @@ describe("web tool automation planner", () => {
     expect(jobs.slice(1).every((job) => typeof job.parameters.osCommand === "string")).toBe(true);
     expect(jobs.slice(1).some((job) => String(job.parameters.osCommand).includes("flag\\{"))).toBe(true);
     expect(jobs.slice(1).every((job) => !("upload" in job.parameters) && !("reverseShell" in job.parameters))).toBe(true);
+  });
+
+  it("uses Windows read-only search commands when SSTImap identifies a Windows target", () => {
+    const jobs = buildAutomationJobs("sstimap", { url: "TARGET_URL" }, [
+      { kind: "engine", value: "Jinja2" },
+      { kind: "technique", value: "R" },
+      { kind: "os", value: "windows" },
+      { kind: "capability", value: "Shell command execution" },
+    ], ["flag", "CTF"]);
+
+    expect(jobs.slice(1).every((job) => String(job.parameters.osCommand).startsWith("powershell.exe -NoProfile -NonInteractive -Command"))).toBe(true);
   });
 
   it("keeps jobs for distinct non-ASCII database and table names unique", () => {

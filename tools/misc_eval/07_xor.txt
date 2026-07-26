@@ -1,0 +1,4 @@
+# XOR Cipher Challenge
+# The following hex is XOR encrypted with a single byte key:
+3c363b3d21226a2805296b343d36690538232e69053f2027
+# Hint: the flag format is flag{...}

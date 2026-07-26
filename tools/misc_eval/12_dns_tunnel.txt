@@ -1,0 +1,16 @@
+# DNS Tunneling Challenge
+# Suspicious DNS queries captured:
+#   mzw.tunnel.evil.com
+#   gcz.tunnel.evil.com
+#   33m.tunnel.evil.com
+#   rxh.tunnel.evil.com
+#   gxz.tunnel.evil.com
+#   tpb.tunnel.evil.com
+#   tdc.tunnel.evil.com
+#   3du.tunnel.evil.com
+#   oi2.tunnel.evil.com
+#   hi2.tunnel.evil.com
+#   jqn.tunnel.evil.com
+#   z6q.tunnel.evil.com
+# The subdomain parts look like base32.
+# What is the exfiltrated data?

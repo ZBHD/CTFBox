@@ -1,0 +1,5 @@
+# QR Code Recovery Challenge
+# A damaged QR code (Version 1, M-level EC)
+# Recovered hex bytes: 666c61677b71725f ("flag{qr_")
+# The QR code has Reed-Solomon error correction.
+# Describe the approach to recover the complete flag.

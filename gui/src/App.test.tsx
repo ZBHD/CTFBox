@@ -775,6 +775,55 @@ describe("App update integration", () => {
     expect(searches.every((argumentsList) => argumentsList.includes("-S") && argumentsList.includes("--no-color"))).toBe(true);
   });
 
+  it("describes a finished automation as a queue state rather than a Flag result", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(AutomationControls).props.onStart());
+    await flush();
+
+    const first = invokeMock.mock.calls.find(([command]) => command === "run_tool")?.[1] as {
+      request: { runId: string };
+      onEvent: { onmessage?: (event: ToolStreamEvent) => void };
+    };
+    act(() => first.onEvent.onmessage?.({ event: "exit", runId: first.request.runId, status: "completed", code: 0 }));
+    await flush();
+
+    expect(textContent(renderer.root)).toContain("队列已结束");
+    expect(textContent(renderer.root)).not.toContain("自动化完成");
+  });
+
+  it("stops an automation job after its configured per-job time limit", async () => {
+    vi.useFakeTimers();
+    try {
+      const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+      invokeMock.mockReset();
+      invokeMock.mockImplementation(async (command: string) => command === "app_health"
+        ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+        : undefined);
+      const renderer = renderApp(adapter());
+      await flush();
+      const controls = renderer.root.findByType(AutomationControls);
+      act(() => controls.props.onTimeoutChange(30));
+      act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+      act(() => controls.props.onStart());
+      await flush();
+
+      const first = invokeMock.mock.calls.find(([command]) => command === "run_tool")?.[1] as { request: { runId: string } };
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+
+      expect(invokeMock).toHaveBeenCalledWith("stop_tool", { runId: first.request.runId });
+      expect(textContent(renderer.root)).toContain("已达到 30 秒时限");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("marks automation as failed when its final subtask fails", async () => {
     const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
     invokeMock.mockReset();

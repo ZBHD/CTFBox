@@ -1,0 +1,157 @@
+{
+  "encoding": {
+    "challenge": "====ASNGQZMKG3MGWZYMDZUGTZMGD3AGTBMGDZMGYJNKG3UGTZNKTYYGCTNED2EMXJOKT24GWJNETZAHVJYMTSRGYJNIG2QGXBNOTZMGBLNQD3AHXBZMTQVG",
+    "answer": "flag{m1sc_enc0ding_m4ster}",
+    "layers": [
+      "reverse",
+      "base32",
+      "hex",
+      "base64"
+    ],
+    "description": "4-layer encoding: reverse \u2192 base32 \u2192 hex \u2192 base64 \u2192 flag"
+  },
+  "caesar": {
+    "challenge": "WCRX{JLSJKZKLKZFE_ZJ_VRJP}",
+    "answer": "FLAG{SUBSTITUTION_IS_EASY}",
+    "shift": 17,
+    "description": "Caesar cipher ROT17"
+  },
+  "stego_lsb": {
+    "description": "8 RGB pixels, LSB of Red channel encodes flag bits",
+    "data": "ff0000 fe0100 ff0000 fe0101 ff0001 fe0100 ff0000 fe0101",
+    "answer": "flag{lsb_h1dden_1n_pl41ns1ght}"
+  },
+  "pcap": {
+    "description": "TCP packets with data in TCP option kind=69",
+    "answer": "flag{tcp_h1dden_1n_opt10ns}",
+    "tcp_options_b64": [
+      "ZmxhZ3t0Y3BfaA==",
+      "MWRkZW5fMW5fbw==",
+      "cHQxMG5zfQ=="
+    ]
+  },
+  "magic_bytes": {
+    "description": "Identify 10 file types from magic bytes",
+    "files": {
+      "file1.bin": "89504e470d0a1a0a",
+      "file2.bin": "ffd8ffe0",
+      "file3.bin": "504b0304",
+      "file4.bin": "255044462d312e",
+      "file5.bin": "474946383961",
+      "file6.bin": "526172211a07",
+      "file7.bin": "7f454c46",
+      "file8.bin": "d0cf11e0",
+      "file9.bin": "1f8b08",
+      "file10.bin": "424d"
+    },
+    "expected": {
+      "file1.bin": "PNG",
+      "file2.bin": "JPEG",
+      "file3.bin": "ZIP",
+      "file4.bin": "PDF",
+      "file5.bin": "GIF",
+      "file6.bin": "RAR",
+      "file7.bin": "ELF",
+      "file8.bin": "OLE2/MS Office",
+      "file9.bin": "GZIP",
+      "file10.bin": "BMP"
+    }
+  },
+  "morse": {
+    "challenge": "..-./.-../.-/--./-.--./--/-----/.-./..././..--.-/-.-./-----/-.././..--.-/--/.-/.../-/./.-./-.--.-",
+    "answer": "FLAG{M0RSE_C0DE_MASTER}",
+    "description": "Morse code with / separator"
+  },
+  "xor_single": {
+    "challenge": "3c363b3d21226a2805296b343d36690538232e69053f2027",
+    "answer": "flag{x0r_s1ngl3_byt3_ez}",
+    "key": "0x5A",
+    "description": "Single-byte XOR with key=0x5A"
+  },
+  "base64_custom": {
+    "challenge": "ZmxhZ3tjdXN0MG1fYjRzZTY0X3Q0YmxlfQ==",
+    "answer": "flag{cust0m_b4se64_t4ble}",
+    "description": "Base64 decode"
+  },
+  "brainfuck": {
+    "challenge": "++++++++++[>++++++++++>+++++++++++>++++++++++>+++++++++++>++++++++++>+<<<<<<-]>-.>+.>---.>+.>++++.>--.<<<<<++.>>>>-------.<+++.-.",
+    "description": "Brainfuck esolang - identify and interpret"
+  },
+  "qr": {
+    "description": "QR code recovery scenario",
+    "scenario": "A damaged QR code (v1, M-EC). Recovered hex: 666c61677b71725f (flag{qr_). Describe recovery approach for remaining ~12 chars.",
+    "answer": "flag{qr_c0de_rec0very}"
+  },
+  "zip_pseudo": {
+    "description": "ZIP pseudo-encryption analysis",
+    "scenario": "ZIP file has encryption bit set but data is plaintext. How to extract?",
+    "answer": "flag{z1p_ps3ud0_3ncrypt3d}"
+  },
+  "dns_tunnel": {
+    "description": "DNS exfiltration detection",
+    "queries": [
+      "mzw.tunnel.evil.com",
+      "gcz.tunnel.evil.com",
+      "33m.tunnel.evil.com",
+      "rxh.tunnel.evil.com",
+      "gxz.tunnel.evil.com",
+      "tpb.tunnel.evil.com",
+      "tdc.tunnel.evil.com",
+      "3du.tunnel.evil.com",
+      "oi2.tunnel.evil.com",
+      "hi2.tunnel.evil.com",
+      "jqn.tunnel.evil.com",
+      "z6q.tunnel.evil.com"
+    ],
+    "answer": "flag{dns_3xf1ltr4ti0n}"
+  },
+  "jpeg_dct": {
+    "description": "JPEG DCT stego (JSteg algorithm)",
+    "scenario": "JSteg LSB embedding in non-zero, non-\u00b11 AC DCT coefficients",
+    "answer": "flag{dct_coeff_st3go}"
+  },
+  "audio_spectrogram": {
+    "description": "Audio spectrogram hidden text",
+    "scenario": "WAV file, 44100Hz 16-bit mono 10s, flag visible in spectrogram",
+    "answer": "flag{sp3ctr0gr4m_h1dd3n}"
+  },
+  "png_chunk": {
+    "description": "PNG custom chunk after IEND",
+    "scenario": "Custom chunk 'flAg' after IEND, data XORed with 0xFF",
+    "answer": "flag{png_1hdr_chunk_h1dden}"
+  },
+  "summary": {
+    "total_challenges": 15,
+    "categories": {
+      "encoding": [
+        "Multi-layer encoding",
+        "Base64",
+        "Morse code"
+      ],
+      "crypto_classical": [
+        "Caesar cipher",
+        "Single-byte XOR"
+      ],
+      "stego_image": [
+        "LSB pixels",
+        "JPEG DCT (JSteg)",
+        "PNG chunk"
+      ],
+      "stego_audio": [
+        "Spectrogram analysis"
+      ],
+      "network": [
+        "PCAP TCP options",
+        "DNS tunneling"
+      ],
+      "forensics_file": [
+        "Magic bytes",
+        "ZIP pseudo-encryption",
+        "QR recovery"
+      ],
+      "esolang": [
+        "Brainfuck"
+      ]
+    }
+  }
+}

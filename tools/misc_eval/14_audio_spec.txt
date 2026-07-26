@@ -1,0 +1,5 @@
+# Audio Steganography Challenge
+# A WAV file (44100 Hz, 16-bit, mono, 10 seconds)
+# Playing it sounds like normal music.
+# But the spectrogram reveals hidden text.
+# Describe the complete analysis approach using Python.

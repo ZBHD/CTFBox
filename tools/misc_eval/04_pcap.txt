@@ -1,0 +1,7 @@
+# Network Traffic Analysis Challenge
+# 3 TCP SYN packets from 192.168.1.100 to 10.0.0.5:443
+# Each has TCP option kind=69 containing:
+#   Packet 1: ZmxhZ3t0Y3BfaA==
+#   Packet 2: MWRkZW5fMW5fbw==
+#   Packet 3: cHQxMG5zfQ==
+# What is the hidden message?

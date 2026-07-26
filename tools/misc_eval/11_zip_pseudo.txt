@@ -1,0 +1,4 @@
+# ZIP Pseudo-Encryption Challenge
+# ZIP appears encrypted (password prompt) but data is plaintext.
+# The encryption bit flag was manually set to 0x0001.
+# How would you extract the contents?

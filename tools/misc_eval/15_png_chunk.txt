@@ -1,0 +1,5 @@
+# PNG Chunk Analysis Challenge
+# A PNG image displays normally but has file size anomalies.
+# Analysis reveals a chunk of type "flAg" after IEND.
+# The chunk data is XORed with 0xFF.
+# Describe the extraction approach.

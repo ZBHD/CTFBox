@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { decodeCandidates, processCrypto } from "./cryptoEngine";
+import { CODECS, CODEC_GROUPS, decodeCandidates, processCrypto } from "./cryptoEngine";
 
 describe("crypto processing engine", () => {
+  it("groups codecs by family and derives the automatic decode order", () => {
+    expect(CODEC_GROUPS).toEqual([
+      { label: "Base 编码", codecs: ["base64", "base32", "base58", "base85", "ascii85"] },
+      { label: "进制表示", codecs: ["hex", "binary", "octal"] },
+      { label: "文本转义", codecs: ["url", "html", "unicode"] },
+    ]);
+    expect(CODECS).toEqual(CODEC_GROUPS.flatMap((group) => group.codecs));
+  });
+
   it("encodes and decodes UTF-8 base64", async () => {
     const encoded = await processCrypto("encoding", "flag{中文}", { codec: "base64", direction: "encode" });
     expect(await processCrypto("encoding", encoded, { codec: "base64", direction: "decode" })).toBe("flag{中文}");

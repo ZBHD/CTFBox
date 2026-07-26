@@ -27,7 +27,18 @@ export const CODEC_LABELS: Record<CryptoCodec, string> = {
   octal: "八进制",
 };
 
-export const CODECS = Object.keys(CODEC_LABELS) as CryptoCodec[];
+export interface CryptoCodecGroup {
+  label: string;
+  codecs: readonly CryptoCodec[];
+}
+
+export const CODEC_GROUPS: readonly CryptoCodecGroup[] = [
+  { label: "Base 编码", codecs: ["base64", "base32", "base58", "base85", "ascii85"] },
+  { label: "进制表示", codecs: ["hex", "binary", "octal"] },
+  { label: "文本转义", codecs: ["url", "html", "unicode"] },
+];
+
+export const CODECS = CODEC_GROUPS.flatMap((group) => group.codecs);
 
 export interface CryptoOptions {
   codec?: CryptoCodec;

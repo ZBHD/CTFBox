@@ -1,7 +1,7 @@
 import { ArrowLeftRight, Copy, FileUp, Play, RotateCcw, ScanSearch } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
-import { CODECS, CODEC_LABELS, decodeCandidates, processCrypto, type CryptoCodec, type CryptoOptions } from "../../lib/cryptoEngine";
+import { CODEC_GROUPS, CODEC_LABELS, decodeCandidates, processCrypto, type CryptoCodec, type CryptoOptions } from "../../lib/cryptoEngine";
 
 interface CryptoWorkbenchProps {
   mode: string;
@@ -81,7 +81,11 @@ export function CryptoWorkbench({ mode, parameters, flagPrefixes = ["flag", "CTF
 
       <div className="crypto-controls">
         {mode === "encoding" && <>
-          <label className="codec-control"><span>编码</span><select value={codec} onChange={(event) => onChange("codec", event.target.value)}>{CODECS.map((value) => <option key={value} value={value}>{CODEC_LABELS[value]}</option>)}</select></label>
+          <label className="codec-control"><span>编码</span><select value={codec} onChange={(event) => onChange("codec", event.target.value)}>
+            {CODEC_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>
+              {group.codecs.map((value) => <option key={value} value={value}>{CODEC_LABELS[value]}</option>)}
+            </optgroup>)}
+          </select></label>
           <div className="control-cluster"><span>方向</span><Segmented value={direction} options={[{ value: "encode", label: "编码" }, { value: "decode", label: "解码" }]} onChange={(value) => onChange("direction", value)} /></div>
         </>}
         {mode === "hash" && <div className="control-cluster"><span>算法</span><Segmented value={algorithm} options={["SHA-1", "SHA-256", "SHA-384", "SHA-512"].map((value) => ({ value, label: value }))} onChange={(value) => onChange("algorithm", value)} /></div>}

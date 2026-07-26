@@ -1,4 +1,6 @@
 import { analyzeJpegDct } from "./jpegDct";
+import { detectF5, extractJsteg } from "./jpegStegExtract";
+import { analyzePalette } from "./paletteStego";
 import { analyzeAnimationFrames } from "./stegoAnimation";
 import { analyzeStegoChannels } from "./stegoChannels";
 import { analyzeImageDimensions } from "./stegoDimensions";
@@ -252,6 +254,15 @@ export async function analyzeStego(input: StegoAnalysisInput, options: StegoOpti
           for (const warning of report.dct.warnings) findings.push({ id: `dct-warning-${findings.length}`, severity: "suspicious", source: "JPEG DCT", title: "DCT 数据不完整", detail: warning });
           const suspiciousPositions = (report.dct.oddRatios ?? []).map((ratio, index) => ({ ratio, index })).filter(({ ratio, index }) => index > 0 && (report.dct?.coefficientCounts?.[index] ?? 0) >= 32 && (ratio < 0.35 || ratio > 0.65));
           if (suspiciousPositions.length >= 4) findings.push({ id: "dct-parity", severity: "suspicious", source: "JPEG DCT", title: "多个 AC 位置奇偶分布偏斜", detail: suspiciousPositions.slice(0, 12).map(({ index, ratio }) => `${index}:${(ratio * 100).toFixed(1)}%`).join(" · ") });
+
+          // JSteg extraction
+          const jsteg = extractJsteg(input.bytes);
+          if (jsteg.byteCount > 0) findings.push({ id: "jsteg-payload", severity: "high", source: "JPEG JSteg", title: "JSteg 提取到载荷", detail: `${jsteg.byteCount} 字节` });
+          else findings.push({ id: "jsteg-check", severity: "info", source: "JPEG JSteg", title: "JSteg 分析", detail: jsteg.detail });
+
+          // F5 detection
+          const f5 = detectF5(input.bytes);
+          if (f5.detected) findings.push({ id: "f5-detect", severity: "suspicious", source: "JPEG F5", title: "F5 算法特征检出", detail: f5.detail });
         }
       }
     } catch (error) {

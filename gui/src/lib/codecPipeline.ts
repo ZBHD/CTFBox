@@ -188,6 +188,19 @@ export async function analyzeCodec(
     }
   }
 
+  // ── Also scan raw input for plain-text flags ──
+  for (const hit of detectFlags(input, prefixes, caseSensitive)) {
+    if (findings.some((f) => f.detail === hit.text)) continue;
+    const assessment = assessFlagCandidate(hit.text);
+    findings.push({
+      id: `flag-${findings.length}`,
+      severity: assessment.confidence === "high" ? "high" : "suspicious",
+      source: "明文扫描",
+      title: assessment.confidence === "high" ? "自动分析发现 Flag" : "自动分析疑似 Flag",
+      detail: hit.text,
+    });
+  }
+
   // ── Flag findings from candidates ──
   for (const candidate of candidates) {
     for (const flag of candidate.flags) {

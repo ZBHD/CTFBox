@@ -97,13 +97,19 @@ mod tests {
         assert_eq!(findings[0].value, "/admin");
         assert_eq!(findings[0].detail.as_deref(), Some("200 · 1KB"));
         assert_eq!(findings[1].value, "/uploads");
-        assert_eq!(findings[1].detail.as_deref(), Some("301 · 178B -> /uploads/"));
+        assert_eq!(
+            findings[1].detail.as_deref(),
+            Some("301 · 178B -> /uploads/")
+        );
         assert_eq!(findings[2].value, "/.htaccess");
     }
 
     #[test]
     fn ignores_banner_and_progress_lines() {
-        let findings = feed("Extensions: php | HTTP method: GET\n[stuff] not a hit\n", 64);
+        let findings = feed(
+            "Extensions: php | HTTP method: GET\n[stuff] not a hit\n",
+            64,
+        );
         assert!(findings.is_empty());
     }
 }

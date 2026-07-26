@@ -76,7 +76,10 @@ fn parse_bracketed(line: &str) -> Option<Finding> {
     if template.is_empty() || !is_severity(severity) {
         return None;
     }
-    let matched = rest.split_whitespace().next().filter(|item| !item.is_empty());
+    let matched = rest
+        .split_whitespace()
+        .next()
+        .filter(|item| !item.is_empty());
     Some(vuln(template, severity, matched))
 }
 
@@ -134,7 +137,10 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, "vuln");
         assert_eq!(findings[0].value, "CVE-2021-1234");
-        assert_eq!(findings[0].detail.as_deref(), Some("high · http://target/vuln"));
+        assert_eq!(
+            findings[0].detail.as_deref(),
+            Some("high · http://target/vuln")
+        );
     }
 
     #[test]
@@ -151,6 +157,9 @@ mod tests {
         assert_eq!(findings[0].value, "tech-detect");
         assert_eq!(findings[0].detail.as_deref(), Some("info · http://target"));
         assert_eq!(findings[1].value, "CVE-2020-5902");
-        assert_eq!(findings[1].detail.as_deref(), Some("critical · https://target/config"));
+        assert_eq!(
+            findings[1].detail.as_deref(),
+            Some("critical · https://target/config")
+        );
     }
 }

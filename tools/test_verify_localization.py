@@ -118,14 +118,17 @@ class VerifyOriginalTests(unittest.TestCase):
         return results
 
     def test_line_ending_only_change_does_not_fail_verification(self):
-        self.write_baseline("source.c", b"first\nsecond\n")
-        (self.original / "source.c").write_bytes(b"first\r\nsecond\r\n")
+        self.write_baseline("sqlmap-1.10/source.c", b"first\nsecond\n")
+        source = self.original / "sqlmap-1.10" / "source.c"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"first\r\nsecond\r\n")
 
         self.assertEqual(self.verify().failures, [])
 
     def test_real_change_and_removal_still_fail_verification(self):
-        self.write_baseline("source.c", b"first\nsecond\n")
-        source = self.original / "source.c"
+        self.write_baseline("sqlmap-1.10/source.c", b"first\nsecond\n")
+        source = self.original / "sqlmap-1.10" / "source.c"
+        source.parent.mkdir(parents=True)
         source.write_bytes(b"changed\n")
 
         changed = self.verify()
@@ -147,6 +150,29 @@ class VerifyOriginalTests(unittest.TestCase):
         marker.write_text("changed = True\n", encoding="utf-8")
         changed = self.verify()
         self.assertTrue(any("意外新增 1 个" in failure for failure in changed.failures))
+
+    def test_unrelated_original_tool_directory_is_outside_localization_baseline(self):
+        source = self.original / "sqlmap-1.10" / "source.py"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"print('sqlmap')\n")
+        self.write_baseline("sqlmap-1.10/source.py", source.read_bytes())
+
+        unrelated = self.original / "dirsearch" / "dirsearch.py"
+        unrelated.parent.mkdir(parents=True)
+        unrelated.write_bytes(b"print('dirsearch')\n")
+
+        self.assertEqual(self.verify().failures, [])
+
+    def test_new_file_in_localized_original_tool_still_fails_verification(self):
+        source = self.original / "sqlmap-1.10" / "source.py"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"print('sqlmap')\n")
+        self.write_baseline("sqlmap-1.10/source.py", source.read_bytes())
+
+        (source.parent / "unexpected.py").write_bytes(b"changed = True\n")
+
+        failures = self.verify().failures
+        self.assertTrue(any("意外新增 1 个" in failure for failure in failures))
 
 
 if __name__ == "__main__":

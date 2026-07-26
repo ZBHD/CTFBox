@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:renderer": "pnpm run prepare:ocr && vite",
+    "prepare:vendor": "powershell -ExecutionPolicy Bypass -File ../tools/prepare_vendor_tools.ps1",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File ../tools/prepare_python_runtime.ps1",
     "prepare:ocr": "node scripts/prepare-ocr-assets.mjs",
     "build": "tauri build",

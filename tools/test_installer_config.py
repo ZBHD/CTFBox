@@ -166,7 +166,7 @@ class InstallerConfigTests(unittest.TestCase):
         self.assertIn('-Filter "*-setup.exe"', workflow)
         self.assertNotIn("bundle/portable", workflow)
 
-    def test_shared_tool_registry_is_bundled_with_the_launcher(self):
+    def test_runner_assets_are_bundled_with_the_launcher(self):
         config = json.loads(
             (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
                 encoding="utf-8"
@@ -177,12 +177,59 @@ class InstallerConfigTests(unittest.TestCase):
             resources["../../tools/tool_registry.json"],
             "tools/tool_registry.json",
         )
+        expected_runner_resources = {
+            "../../tools/clients/webshell/webshell.py": (
+                "tools/clients/webshell/webshell.py"
+            ),
+            "../../tools/clients/webshell/crypto": "tools/clients/webshell/crypto",
+            "../../tools/clients/webshell/protocols": (
+                "tools/clients/webshell/protocols"
+            ),
+            "../../tools/bin/windows": "tools/bin/windows",
+        }
+        for source, destination in expected_runner_resources.items():
+            self.assertEqual(resources[source], destination)
+        self.assertNotIn("../../tools/clients", resources)
 
     def test_windows_powershell_build_script_is_ascii_compatible(self):
         script = ROOT / "tools" / "prepare_python_runtime.ps1"
         content = script.read_bytes().decode("ascii")
         self.assertIn("Remove-PythonBytecodeCache", content)
         self.assertIn("& $python -B -c", content)
+        self.assertIn('$runtimeSchemaVersion = "2"', content)
+        self.assertIn("if ($null -eq $markerVersion)", content)
+        self.assertIn('Original\\dirsearch\\requirements\\runtime.txt', content)
+        self.assertIn('tool-packages\\dirsearch', content)
+
+    def test_tauri_build_prepares_ignored_vendor_tools(self):
+        config = json.loads(
+            (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        package = json.loads(
+            (ROOT / "gui" / "package.json").read_text(encoding="utf-8")
+        )
+
+        self.assertIn("pnpm run prepare:vendor", config["build"]["beforeBuildCommand"])
+        self.assertEqual(
+            package["scripts"]["prepare:vendor"],
+            "powershell -ExecutionPolicy Bypass -File ../tools/prepare_vendor_tools.ps1",
+        )
+
+    def test_vendor_tool_preparation_is_version_and_hash_pinned(self):
+        script = ROOT / "tools" / "prepare_vendor_tools.ps1"
+        content = script.read_bytes().decode("ascii")
+
+        for version in (
+            "467f66b107f5316f6da85ceb4bcfcddbea447ae4",
+            "2.14.0",
+            "3.11.0",
+        ):
+            self.assertIn(version, content)
+        self.assertIn("Get-FileHash", content)
+        self.assertIn("Hash mismatch", content)
+        self.assertNotIn("/latest/", content)
 
 
 if __name__ == "__main__":

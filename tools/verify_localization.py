@@ -16,6 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 ORIGINAL = ROOT / "Original"
 CN = ROOT / "CNversion"
 BASELINE = ROOT / "tools" / "localization" / "original-baseline.sha256"
+LOCALIZED_ORIGINAL_DIRECTORIES = {
+    "sqlmap-1.10",
+    "SSTImap-master",
+}
 ALLOWED_ORIGINAL_ADDITIONS = {
     "sqlmap-1.10/使用说明.md",
     "SSTImap-master/使用说明.md",
@@ -86,11 +90,14 @@ def read_baseline() -> dict[str, str]:
 def verify_original(results: CheckResults) -> None:
     baseline = read_baseline()
     results.check(bool(baseline), "原版哈希基线存在且非空")
-    current = {
-        path.relative_to(ORIGINAL).as_posix(): sha256(path)
-        for path in ORIGINAL.rglob("*")
-        if path.is_file()
-    }
+    current: dict[str, str] = {}
+    for path in ORIGINAL.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(ORIGINAL)
+        if relative.parts[0] not in LOCALIZED_ORIGINAL_DIRECTORIES:
+            continue
+        current[relative.as_posix()] = sha256(path)
     changed = sorted(path for path, digest in baseline.items() if current.get(path) != digest)
     removed = sorted(set(baseline) - set(current))
     additions = set(current) - set(baseline)

@@ -2,7 +2,14 @@
 
 CTFBox 的 Web 工具按“真实交互模型”分为三类，运行器由 `tool_registry.json` 的
 `runner.kind` 区分。仓库内含全部**调用与解析代码**并有单元测试覆盖，但**第三方工具本体
-（Go 二进制、Python 源码树）需按下述约定就位后才能真正联网执行**——它们不随源码仓库分发。
+（Go 二进制、Python 源码树）不随源码仓库分发**。本地或 Release 构建会先执行：
+
+```powershell
+pnpm --dir gui prepare:vendor
+```
+
+该命令通过 `tools/prepare_vendor_tools.ps1` 下载固定版本的官方归档，校验归档和入口文件的
+SHA-256 后放入下述目录。已有文件也必须通过相同校验，避免将未知版本打入 Setup。
 
 ## kind = "python"（源码型扫描器 / 注入器）
 
@@ -10,7 +17,7 @@ CTFBox 的 Web 工具按“真实交互模型”分为三类，运行器由 `too
 - 交付位置：`Original/<sourceDirectory>/<entry>`（汉化版放 `CNversion/<sourceDirectory>/<entry>`）
 - 调用链：Rust `run_tool` → `python -B -u tools/ctfbox_launcher.py <tool> [-cn] <args>`
   → 启动器 `runpy` 执行入口脚本。
-- dirsearch 需要将其源码树放到 `Original/dirsearch/`，入口 `dirsearch.py`。
+- dirsearch 固定源码会准备到 `Original/dirsearch/`，入口为 `dirsearch.py`。
 
 ## kind = "binary"（预编译 Go 工具）
 
@@ -21,7 +28,7 @@ CTFBox 的 Web 工具按“真实交互模型”分为三类，运行器由 `too
   - 例：`tools/bin/windows/subfinder.exe`、`tools/bin/linux/nuclei`
 - 调用链：Rust `run_tool` 校验白名单程序名（`^[a-z0-9][a-z0-9-]*$`）→ 确认文件存在
   → **不经 shell** 直接 `Command::new(executable).args(...)` spawn，规避命令注入。
-- 请从官方 Release 下载对应平台二进制放入上述目录；仓库不内置以避免体积与许可问题。
+- Windows AMD64 官方 Release 会在构建前准备到上述目录；仓库不内置以避免体积与许可问题。
 
 ## kind = "session"（第一方长驻引擎）
 

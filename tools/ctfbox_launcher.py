@@ -51,6 +51,14 @@ def load_tool_registry(path: Path) -> dict[str, tuple[str, str, str]]:
 TOOLS = load_tool_registry(ROOT / "tools" / "tool_registry.json")
 
 
+def runtime_import_paths(root: Path, tool: str, edition_root: Path) -> list[Path]:
+    paths = [edition_root]
+    dependency_root = root / "python" / "tool-packages" / tool
+    if dependency_root.is_dir():
+        paths.append(dependency_root)
+    return paths
+
+
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1].lower() not in TOOLS:
         print(f"用法：ctfbox_launcher.py <{'|'.join(TOOLS)}> [-cn] [工具参数...]", file=sys.stderr)
@@ -76,8 +84,10 @@ def main() -> int:
 
     previous_argv = sys.argv[:]
     previous_cwd = Path.cwd()
+    import_paths = runtime_import_paths(ROOT, tool, edition_root)
     sys.argv = [str(script), *arguments]
-    sys.path.insert(0, str(edition_root))
+    for path in reversed(import_paths):
+        sys.path.insert(0, str(path))
     os.chdir(edition_root)
     try:
         runpy.run_path(str(script), run_name="__main__")
@@ -86,8 +96,10 @@ def main() -> int:
     finally:
         os.chdir(previous_cwd)
         sys.argv = previous_argv
-        if sys.path and sys.path[0] == str(edition_root):
-            sys.path.pop(0)
+        for path in import_paths:
+            value = str(path)
+            if value in sys.path:
+                sys.path.remove(value)
     return 0
 
 

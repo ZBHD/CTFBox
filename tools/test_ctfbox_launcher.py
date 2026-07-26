@@ -1,7 +1,14 @@
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from ctfbox_launcher import ROOT, TOOLS, load_tool_registry, normalize_windows_path
+from ctfbox_launcher import (
+    ROOT,
+    TOOLS,
+    load_tool_registry,
+    normalize_windows_path,
+    runtime_import_paths,
+)
 
 
 class LauncherPathTests(unittest.TestCase):
@@ -24,6 +31,22 @@ class LauncherPathTests(unittest.TestCase):
         self.assertNotIn("subfinder", loaded)
         self.assertNotIn("nuclei", loaded)
         self.assertEqual(TOOLS, loaded)
+
+    def test_adds_only_the_current_tools_isolated_dependencies(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            edition_root = root / "Original" / "dirsearch"
+            dependency_root = root / "python" / "tool-packages" / "dirsearch"
+            dependency_root.mkdir(parents=True)
+
+            self.assertEqual(
+                runtime_import_paths(root, "dirsearch", edition_root),
+                [edition_root, dependency_root],
+            )
+            self.assertEqual(
+                runtime_import_paths(root, "sqlmap", edition_root),
+                [edition_root],
+            )
 
 
 if __name__ == "__main__":

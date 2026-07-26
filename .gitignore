@@ -2,6 +2,10 @@
 .superpowers/
 docs/
 
+# Local AI coding agent guidelines (not tracked)
+CLAUDE.md
+AGENTS.md
+
 # Python runtime artifacts
 __pycache__/
 *.py[cod]
@@ -20,6 +24,7 @@ setup/
 # Local test output
 artifacts/scenario-test/
 outputs/
+artifacts/test-corpus/
 .codex_xlsx_build/
 .research/
 

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm run dev:renderer",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm run prepare:runtime && pnpm run build:renderer",
+    "beforeBuildCommand": "pnpm run prepare:vendor && pnpm run prepare:runtime && pnpm run build:renderer",
     "frontendDist": "../dist"
   },
   "app": {
@@ -35,6 +35,10 @@
       "../../CNversion": "CNversion",
       "../../tools/ctfbox_launcher.py": "tools/ctfbox_launcher.py",
       "../../tools/tool_registry.json": "tools/tool_registry.json",
+      "../../tools/clients/webshell/webshell.py": "tools/clients/webshell/webshell.py",
+      "../../tools/clients/webshell/crypto": "tools/clients/webshell/crypto",
+      "../../tools/clients/webshell/protocols": "tools/clients/webshell/protocols",
+      "../../tools/bin/windows": "tools/bin/windows",
       "resources/python": "python"
     },
     "windows": {

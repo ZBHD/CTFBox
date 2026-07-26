@@ -184,8 +184,9 @@ fn validate_program_name(program: &str) -> Result<(), String> {
     let valid_first = characters
         .next()
         .is_some_and(|first| first.is_ascii_lowercase() || first.is_ascii_digit());
-    let valid_rest = characters
-        .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+    let valid_rest = characters.all(|character| {
+        character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+    });
     if valid_first && valid_rest {
         Ok(())
     } else {
@@ -624,7 +625,14 @@ mod tests {
     fn runner_registry_matches_the_shared_tool_manifest() {
         assert_eq!(
             super::runner_tool_ids(),
-            vec!["dirsearch", "nuclei", "sqlmap", "sstimap", "subfinder", "webshell"]
+            vec![
+                "dirsearch",
+                "nuclei",
+                "sqlmap",
+                "sstimap",
+                "subfinder",
+                "webshell"
+            ]
         );
     }
 

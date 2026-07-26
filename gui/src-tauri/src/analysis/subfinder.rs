@@ -49,9 +49,9 @@ fn parse_json(line: &str) -> Option<Finding> {
 fn looks_like_host(line: &str) -> bool {
     line.contains('.')
         && !line.contains(char::is_whitespace)
-        && line
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_'))
+        && line.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')
+        })
 }
 
 fn subdomain(host: &str, source: Option<&str>) -> Finding {
@@ -104,7 +104,10 @@ mod tests {
         let findings = feed_stdout(output);
 
         assert_eq!(
-            findings.iter().map(|item| item.value.as_str()).collect::<Vec<_>>(),
+            findings
+                .iter()
+                .map(|item| item.value.as_str())
+                .collect::<Vec<_>>(),
             vec!["www.example.com", "mail.example.com"]
         );
     }

@@ -1,4 +1,5 @@
 import type { StegoLocalAnalysis } from "./stegoTypes";
+import type { ZipLocalAnalysis } from "./zipTypes";
 
 export type LsbChannel = "R" | "G" | "B" | "A" | "I";
 export type LsbBit = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -81,4 +82,4 @@ export interface LsbLocalAnalysis {
   error?: string;
 }
 
-export type LocalAnalysisState = LsbLocalAnalysis | StegoLocalAnalysis;
+export type LocalAnalysisState = LsbLocalAnalysis | StegoLocalAnalysis | ZipLocalAnalysis;

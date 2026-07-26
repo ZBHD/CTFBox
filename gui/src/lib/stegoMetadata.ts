@@ -1,4 +1,5 @@
 import { unzlibSync } from "fflate";
+import { assessFlagCandidate, detectFlags } from "./flagDetector";
 import { readAscii, readU16, readU32, StegoParseError } from "./stegoBinary";
 import type { StegoFinding, StegoMetadataEntry } from "./stegoTypes";
 
@@ -8,16 +9,24 @@ export interface StegoMetadataResult {
 }
 
 const TIFF_TAGS: Record<number, string> = {
+  0x010d: "DocumentName",
   0x010e: "ImageDescription",
   0x010f: "Make",
   0x0110: "Model",
   0x0131: "Software",
   0x0132: "DateTime",
   0x013b: "Artist",
+  0x013c: "HostComputer",
+  0x02bc: "XMP",
   0x8298: "Copyright",
   0x9003: "DateTimeOriginal",
   0x9286: "UserComment",
+  0x9c9b: "XPTitle",
   0x9c9c: "XPComment",
+  0x9c9d: "XPAuthor",
+  0x9c9e: "XPKeywords",
+  0x9c9f: "XPSubject",
+  0xa434: "LensModel",
   0x0001: "GPSLatitudeRef",
   0x0002: "GPSLatitude",
   0x0003: "GPSLongitudeRef",
@@ -41,7 +50,8 @@ function metadataFinding(findings: StegoFinding[], title: string, detail: string
 
 function decodeTiffValue(bytes: Uint8Array, type: number, count: number, order: "le" | "be", tag: number) {
   if (type === 2) return text(bytes);
-  if (tag === 0x9c9c) return text(bytes, "utf-16le");
+  if (tag >= 0x9c9b && tag <= 0x9c9f) return text(bytes, "utf-16le");
+  if (tag === 0x02bc) return text(bytes);
   if (type === 1 || type === 7) {
     const readable = text(bytes);
     return readable && Array.from(readable).every((character) => character >= " " || character === "\t") ? readable : Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(" ");
@@ -98,7 +108,12 @@ function parseTiff(tiff: Uint8Array, baseOffset: number, entries: StegoMetadataE
         const valueBytes = tiff.subarray(valueOffset, valueOffset + byteLength);
         const value = decodeTiffValue(valueBytes, type, valueCount, order, tag);
         if (!value) continue;
-        entries.push({ group: current.group, key: TIFF_TAGS[tag] ?? `Tag 0x${tag.toString(16).padStart(4, "0")}`, value, offset: baseOffset + entryOffset });
+        entries.push({
+          group: tag === 0x02bc ? "XMP" : current.group,
+          key: tag === 0x02bc ? "Packet" : TIFF_TAGS[tag] ?? `Tag 0x${tag.toString(16).padStart(4, "0")}`,
+          value,
+          offset: baseOffset + valueOffset,
+        });
       }
       const nextOffsetPosition = current.offset + 2 + count * 12;
       const next = readU32(tiff, nextOffsetPosition, order);
@@ -199,11 +214,195 @@ function parseWebp(bytes: Uint8Array, entries: StegoMetadataEntry[], findings: S
   }
 }
 
-export function extractStegoMetadata(bytes: Uint8Array): StegoMetadataResult {
+function parsePsd(bytes: Uint8Array, entries: StegoMetadataEntry[], findings: StegoFinding[]) {
+  if (readAsciiSafe(bytes, 0, 4) !== "8BPS") return;
+  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  const start = decoded.indexOf("<?xpacket");
+  if (start < 0) return;
+  const endMarker = decoded.indexOf("<?xpacket end=", start);
+  const close = endMarker < 0 ? -1 : decoded.indexOf("?>", endMarker);
+  const packet = decoded.slice(start, close < 0 ? Math.min(decoded.length, start + 64 * 1024) : close + 2);
+  entries.push({ group: "PSD XMP", key: "Packet", value: packet, offset: start });
+  const history = packet.match(/<xmpMM:History>[\s\S]*?<\/xmpMM:History>/)?.[0] ?? "";
+  let index = 0;
+  for (const match of history.matchAll(/<stEvt:when>([^<]+)<\/stEvt:when>/g)) {
+    entries.push({ group: "PSD XMP 历史", key: `When ${index + 1}`, value: match[1].trim(), offset: start + (match.index ?? 0) });
+    index += 1;
+  }
+  if (!history) metadataFinding(findings, "PSD XMP 未包含编辑历史", "已提取 XMP，但没有找到 xmpMM:History", start);
+}
+
+function addDerivedFlag(findings: StegoFinding[], title: string, value: string, offset?: number) {
+  if (findings.some((finding) => finding.detail.toLowerCase() === value.toLowerCase())) return;
+  const assessment = assessFlagCandidate(value);
+  findings.push({
+    id: `metadata-derived-${findings.length}`,
+    severity: assessment.confidence === "high" ? "high" : "suspicious",
+    source: "元数据派生",
+    title,
+    detail: value,
+    offset,
+  });
+}
+
+const HOMOPHONE_TOKENS: Array<readonly [string, string]> = [
+  ["豆贝尔维", "w"], ["艾克斯", "x"], ["艾尺", "h"], ["艾勒", "l"], ["艾姆", "m"], ["艾恩", "n"], ["艾丝", "s"],
+  ["艾弗", "f"], ["爱抚", "f"], ["阿尔", "r"], ["贼德", "z"], ["秀", "show"],
+  ["零", "0"], ["一", "1"], ["二", "2"], ["三", "3"], ["四", "4"], ["五", "5"], ["六", "6"], ["七", "7"], ["八", "8"], ["九", "9"],
+  ["诶", "a"], ["必", "b"], ["比", "b"], ["西", "c"], ["弟", "d"], ["迪", "d"], ["易", "e"], ["伊", "e"],
+  ["吉", "g"], ["艾", "i"], ["杰", "j"], ["开", "k"], ["哦", "o"], ["劈", "p"], ["丘", "q"], ["替", "t"],
+  ["提", "t"], ["优", "u"], ["维", "v"], ["歪", "y"],
+];
+
+function chineseHomophoneCandidates(
+  value: string,
+  prefixes: readonly string[],
+  caseSensitive: boolean,
+) {
+  const opening = value.indexOf("大括号");
+  const closing = value.lastIndexOf("大括号");
+  if (opening < 0 || closing <= opening) return [];
+  let decoded = `${value.slice(0, opening)}{${value.slice(opening + 3, closing)}}${value.slice(closing + 3)}`;
+  for (const [token, replacement] of HOMOPHONE_TOKENS) decoded = decoded.replaceAll(token, replacement);
+  return detectFlags(decoded, prefixes, caseSensitive).map((hit) => hit.text);
+}
+
+function appendMetadataDerivations(
+  entries: StegoMetadataEntry[],
+  findings: StegoFinding[],
+  prefixes: readonly string[],
+  caseSensitive: boolean,
+) {
+  for (const entry of entries) {
+    for (const candidate of chineseHomophoneCandidates(entry.value, prefixes, caseSensitive)) {
+      addDerivedFlag(findings, "中文同音字符派生 Flag", candidate, entry.offset);
+    }
+  }
+
+  const emptyPrefix = entries.map((entry) => entry.value.match(/^([A-Za-z][A-Za-z0-9_-]{1,31})\{\}$/)?.[1]).find(Boolean);
+  if (emptyPrefix) {
+    const values = entries.flatMap((entry) => {
+      const match = entry.value.match(/^(\d+)(?:\s+\(\1\/1\))?$/);
+      if (!match) return [];
+      const value = Number.parseInt(match[1], 10);
+      return Number.isSafeInteger(value) && value >= 0x01000000 && value <= 0xffffffff ? [value] : [];
+    });
+    if (values.length >= 2 && values.length <= 16) {
+      const payload = values.map((value) => value.toString(16).padStart(8, "0")).join("");
+      addDerivedFlag(findings, "EXIF 十进制转十六进制 Flag", `${emptyPrefix}{${payload}}`);
+    }
+  }
+
+  for (const entry of entries.filter((item) => item.group === "PSD XMP" && item.key === "Packet")) {
+    if (!entry.value.includes("UnixTimestamp") || !entry.value.includes("DECtoHEX")) continue;
+    const prefix = entry.value.match(/([A-Za-z][A-Za-z0-9_-]{1,31})\{\}/)?.[1];
+    const history = entry.value.match(/<xmpMM:History>[\s\S]*?<\/xmpMM:History>/)?.[0] ?? "";
+    const timestamps = Array.from(history.matchAll(/<stEvt:when>([^<]+)<\/stEvt:when>/g), (match) => {
+      const normalized = match[1].trim().replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+      return Math.floor(Date.parse(normalized) / 1000);
+    }).filter((value) => Number.isFinite(value) && value >= 0 && value <= 0xffffffff);
+    if (prefix && timestamps.length >= 2 && timestamps.length <= 16) {
+      const payload = timestamps.map((value) => value.toString(16).padStart(8, "0")).join("");
+      addDerivedFlag(findings, "PSD XMP 时间戳派生 Flag", `${prefix}{${payload}}`, entry.offset);
+    }
+  }
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function appendMetadataFlags(
+  entries: StegoMetadataEntry[],
+  findings: StegoFinding[],
+  prefixes: readonly string[],
+  caseSensitive: boolean,
+) {
+  const cleanPrefixes = prefixes.map((prefix) => prefix.trim()).filter(Boolean);
+  if (cleanPrefixes.length === 0) return;
+  const seen = new Set<string>();
+  const addFinding = (title: string, value: string, offset?: number) => {
+    const key = caseSensitive ? value : value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    const assessment = assessFlagCandidate(value);
+    findings.push({
+      id: `metadata-flag-${findings.length}`,
+      severity: assessment.confidence === "high" ? "high" : "suspicious",
+      source: "元数据",
+      title,
+      detail: value,
+      offset,
+    });
+  };
+
+  for (const entry of entries) {
+    for (const hit of detectFlags(entry.value, cleanPrefixes, caseSensitive)) {
+      addFinding("元数据发现 Flag", hit.text, entry.offset);
+    }
+  }
+
+  const prefixPattern = cleanPrefixes.map(escapeRegExp).sort((left, right) => right.length - left.length).join("|");
+  const starts: Array<{ value: string; offset?: number }> = [];
+  const endings: string[] = [];
+  const middle: string[] = [];
+  const startExpression = new RegExp(`(?:${prefixPattern})\\{[A-Za-z0-9_+./=-]{1,64}`, caseSensitive ? "g" : "gi");
+  const endingExpression = /[A-Za-z0-9_+./=-]{2,64}\}/g;
+  for (const entry of entries) {
+    for (const match of entry.value.match(startExpression) ?? []) {
+      const start = entry.value.indexOf(match);
+      if (start >= 0 && entry.value.indexOf("}", start + match.length) < 0) starts.push({ value: match, offset: entry.offset });
+    }
+    for (const match of entry.value.match(endingExpression) ?? []) endings.push(match);
+    const candidate = entry.value.trim();
+    if (/^[0-9a-f]{4,64}$/i.test(candidate)) middle.push(candidate);
+  }
+  const unique = (values: string[]) => values.filter((value, index) =>
+    values.findIndex((candidate) => caseSensitive ? candidate === value : candidate.toLowerCase() === value.toLowerCase()) === index,
+  );
+  const middleValues = unique(middle).slice(0, 24);
+  const endingValues = unique(endings).slice(0, 24);
+
+  for (const start of starts.slice(0, 16)) {
+    const opening = start.value.indexOf("{");
+    const first = start.value.slice(opening + 1);
+    for (const ending of endingValues) {
+      const last = ending.slice(0, -1);
+      const combinations: string[][] = [];
+      const visit = (from: number, selected: string[]) => {
+        if (combinations.length >= 64 || selected.length > 4) return;
+        combinations.push(selected);
+        if (selected.length === 4) return;
+        for (let index = from; index < middleValues.length; index += 1) {
+          const value = middleValues[index];
+          if (first.length + selected.join("").length + value.length + last.length <= 512) visit(index + 1, [...selected, value]);
+        }
+      };
+      visit(0, []);
+      for (const parts of combinations) {
+        const value = `${start.value}${parts.join("")}${ending}`;
+        if (detectFlags(value, cleanPrefixes, caseSensitive).some((hit) => caseSensitive ? hit.text === value : hit.text.toLowerCase() === value.toLowerCase())) {
+          addFinding("元数据组合发现 Flag", value, start.offset);
+        }
+      }
+    }
+  }
+}
+
+export function extractStegoMetadata(
+  bytes: Uint8Array,
+  options: { prefixes?: readonly string[]; caseSensitive?: boolean } = {},
+): StegoMetadataResult {
   const entries: StegoMetadataEntry[] = [];
   const findings: StegoFinding[] = [];
+  const prefixes = options.prefixes ?? ["flag", "ctf", "ctfshow"];
+  const caseSensitive = options.caseSensitive ?? false;
   if (readAsciiSafe(bytes, 1, 3) === "PNG") parsePng(bytes, entries, findings);
   else if (bytes[0] === 0xff && bytes[1] === 0xd8) parseJpeg(bytes, entries, findings);
   else if (readAsciiSafe(bytes, 0, 4) === "RIFF" && readAsciiSafe(bytes, 8, 4) === "WEBP") parseWebp(bytes, entries, findings);
+  else if ((readAsciiSafe(bytes, 0, 4) === "II*\0") || (readAsciiSafe(bytes, 0, 4) === "MM\0*")) parseTiff(bytes, 0, entries, findings);
+  else if (readAsciiSafe(bytes, 0, 4) === "8BPS") parsePsd(bytes, entries, findings);
+  appendMetadataDerivations(entries, findings, prefixes, caseSensitive);
+  appendMetadataFlags(entries, findings, prefixes, caseSensitive);
   return { entries, findings };
 }

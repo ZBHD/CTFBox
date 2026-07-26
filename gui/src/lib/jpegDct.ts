@@ -182,7 +182,8 @@ function decodeBaseline(
   const mcuColumns = Math.ceil(frame.width / (8 * maximumHorizontal));
   const mcuRows = Math.ceil(frame.height / (8 * maximumVertical));
   const totalMcus = mcuColumns * mcuRows;
-  const estimatedBlocks = totalMcus * scan.reduce((sum, item) => sum + item.component.horizontal * item.component.vertical, 0);
+  const blocksPerMcu = scan.reduce((sum, item) => sum + item.component.horizontal * item.component.vertical, 0);
+  const estimatedBlocks = totalMcus * blocksPerMcu;
   if (estimatedBlocks > 2_000_000) throw new Error("JPEG DCT 块数超过 2000000 限制");
 
   const predictors = new Map<number, number>();
@@ -190,6 +191,7 @@ function decodeBaseline(
   const oddCounts = Array<number>(64).fill(0);
   let zeroAc = 0;
   let blocks = 0;
+  let decodedMcus = 0;
   let mcuSinceRestart = 0;
   const resetPredictors = () => {
     predictors.clear();
@@ -234,6 +236,7 @@ function decodeBaseline(
           blocks += 1;
         }
       }
+      decodedMcus += 1;
       mcuSinceRestart += 1;
       if (restartInterval > 0 && mcuSinceRestart === restartInterval) mcuSinceRestart = 0;
     }
@@ -244,6 +247,11 @@ function decodeBaseline(
 
   return {
     blocks,
+    decodedMcus,
+    mcuWidth: 8 * maximumHorizontal,
+    mcuHeight: 8 * maximumVertical,
+    blocksPerMcu,
+    entropyBytesRemaining: Math.max(0, bytes.length - reader.cursor),
     coefficientCounts,
     oddRatios: coefficientCounts.map((count, index) => count === 0 ? 0 : oddCounts[index] / count),
     zeroAcRatio: blocks === 0 ? 0 : zeroAc / (blocks * 63),

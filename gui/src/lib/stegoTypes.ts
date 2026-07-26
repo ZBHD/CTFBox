@@ -5,11 +5,15 @@ export type StegoSeverity = "high" | "suspicious" | "info";
 export interface StegoOptions {
   metadata: boolean;
   structure: boolean;
+  channels: boolean;
+  dimensions: boolean;
+  recursiveCarving: boolean;
   trailing: boolean;
   strings: boolean;
   visuals: boolean;
   dct: boolean;
   frequency: boolean;
+  ocr: boolean;
   minimumStringLength: number;
   fftSize: 128 | 256 | 512;
 }
@@ -62,6 +66,36 @@ export interface StegoVisual {
   detail?: string;
 }
 
+export interface StegoChannelCandidate {
+  id: string;
+  source: string;
+  label: string;
+  value: string;
+  confidence: "high" | "candidate";
+  detail: string;
+  flags: string[];
+}
+
+export interface StegoRepairCandidate {
+  id: string;
+  format: "PNG" | "BMP" | "GIF" | "JPEG";
+  label: string;
+  width: number;
+  height: number;
+  confidence: "exact" | "candidate";
+  detail: string;
+  bytes: Uint8Array;
+}
+
+export interface StegoOcrResult {
+  sourceId: string;
+  sourceLabel: string;
+  text: string;
+  confidence: number;
+  flags: string[];
+  error?: string;
+}
+
 export interface JpegDctReport {
   supported: boolean;
   reason?: string;
@@ -69,6 +103,11 @@ export interface JpegDctReport {
   height?: number;
   components?: number;
   blocks?: number;
+  decodedMcus?: number;
+  mcuWidth?: number;
+  mcuHeight?: number;
+  blocksPerMcu?: number;
+  entropyBytesRemaining?: number;
   restartInterval?: number;
   zeroAcRatio?: number;
   oddRatios?: number[];
@@ -85,11 +124,14 @@ export interface StegoReport {
   visuals: StegoVisual[];
   dct?: JpegDctReport;
   carvedFiles: LsbExtractedFile[];
+  channels?: StegoChannelCandidate[];
+  repairs?: StegoRepairCandidate[];
+  ocr?: StegoOcrResult[];
   logicalEnd?: number;
 }
 
 export interface StegoProgress {
-  stage: "structure" | "metadata" | "strings" | "visuals" | "dct" | "frequency";
+  stage: "structure" | "channels" | "dimensions" | "carving" | "metadata" | "strings" | "visuals" | "dct" | "frequency" | "ocr";
   completed: number;
   total: number;
 }
@@ -103,9 +145,10 @@ export interface StegoLocalAnalysis {
   dataUrl?: string;
   bytes?: Uint8Array;
   pixels?: StegoPixelSource;
+  batchParts?: Array<{ name: string; format: string; width: number; height: number }>;
   options: StegoOptions;
   progress?: StegoProgress;
   report?: StegoReport;
-  selectedTab: "overview" | "metadata" | "structure" | "strings" | "visuals" | "dct" | "files";
+  selectedTab: "overview" | "channels" | "repairs" | "metadata" | "structure" | "strings" | "visuals" | "ocr" | "dct" | "files";
   error?: string;
 }

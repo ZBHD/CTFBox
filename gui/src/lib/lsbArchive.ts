@@ -150,12 +150,15 @@ function unpackZip(bytes: Uint8Array, limits: ArchiveLimits): LsbExtractedFile[]
 
 function unpackGzip(bytes: Uint8Array, limits: ArchiveLimits): LsbExtractedFile[] {
   if (bytes.length < 18) return [warning("GZIP 数据被截断")];
-  const uncompressedSize = readU32Le(bytes, bytes.length - 4);
-  if (uncompressedSize > limits.maxFileBytes) return [warning(`GZIP 单文件大小超过限制 ${limits.maxFileBytes} 字节`)];
-  if (uncompressedSize > limits.maxTotalBytes) return [warning(`GZIP 总解压大小超过限制 ${limits.maxTotalBytes} 字节`)];
-  if (uncompressedSize / Math.max(1, bytes.length) > limits.maxCompressionRatio) return [warning(`GZIP 压缩比超过限制 ${limits.maxCompressionRatio}:1`)];
+  const maximum = Math.max(1, Math.min(
+    limits.maxFileBytes,
+    limits.maxTotalBytes,
+    Math.floor(bytes.length * limits.maxCompressionRatio),
+  ));
   try {
-    return [decodedFile("payload", gunzipSync(bytes))];
+    const decoded = gunzipSync(bytes, { out: new Uint8Array(maximum) });
+    if (decoded.length >= maximum) return [warning(`GZIP 解压输出达到限制 ${maximum} 字节`)];
+    return [decodedFile("payload", decoded)];
   } catch (error) {
     return [warning(`GZIP 解压失败：${error instanceof Error ? error.message : String(error)}`)];
   }

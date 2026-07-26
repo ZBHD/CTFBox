@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectFlags } from "./flagDetector";
+import { assessFlagCandidate, detectFlags } from "./flagDetector";
 
 describe("global flag detector", () => {
   it("finds plain flags with custom prefixes", () => {
@@ -31,5 +31,20 @@ describe("global flag detector", () => {
   it("ignores oversized Base64-like tokens before decoding", () => {
     const oversized = `ZmxhZ3tvdmVyc2l6ZWR9${"A".repeat(4096)}`;
     expect(detectFlags(oversized, ["flag"], false)).toEqual([]);
+  });
+
+  it("keeps very short brace matches as suspicious instead of final answers", () => {
+    expect(assessFlagCandidate("ctfshow{32}")).toMatchObject({
+      confidence: "suspicious",
+      reason: expect.stringContaining("过短"),
+    });
+    expect(assessFlagCandidate("ctfshow{0cb07add909d0d60a92101a8b5c7223a}")).toMatchObject({
+      confidence: "high",
+    });
+  });
+
+  it("rejects low-diversity padding while accepting readable multi-token payloads", () => {
+    expect(assessFlagCandidate("flag{aaaaaaaa}").confidence).toBe("suspicious");
+    expect(assessFlagCandidate("flag{stage_two-result}").confidence).toBe("high");
   });
 });

@@ -31,6 +31,7 @@ scope.onmessage = (event) => {
   }).then((report) => {
     const buffers = new Set<ArrayBuffer>();
     for (const visual of report.visuals) if (visual.pixels.buffer instanceof ArrayBuffer) buffers.add(visual.pixels.buffer);
+    for (const repair of report.repairs ?? []) if (repair.bytes.buffer instanceof ArrayBuffer) buffers.add(repair.bytes.buffer);
     fileBuffers(report.carvedFiles, buffers);
     scope.postMessage({ type: "complete", jobId: request.jobId, report }, [...buffers]);
   }).catch((error) => {

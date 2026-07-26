@@ -89,6 +89,28 @@ describe("WebshellWorkbench", () => {
     act(() => renderer.unmount());
   });
 
+  it("selects the behinder protocol and forwards it in the connect op", async () => {
+    const { transport, lines } = fakeTransport();
+    let renderer!: ReactTestRenderer;
+    act(() => { renderer = create(<WebshellWorkbench transport={transport} runId="run-3" />); });
+    const root = renderer.root;
+
+    // 切换协议为冰蝎
+    const protocolSelect = root.findAllByType("select").find((node) => node.props.value === "ctfbox")!;
+    act(() => protocolSelect.props.onChange({ target: { value: "behinder" } }));
+    // 冰蝎固定 AES，编码器下拉应被只读输入替代
+    expect(root.findAllByType("input").some((node) => node.props.value === "AES-128" && node.props.readOnly)).toBe(true);
+
+    const targetInput = root.findAllByType("input").find((node) => node.props.placeholder === "http://host/shell.php")!;
+    act(() => targetInput.props.onChange({ target: { value: "http://h/s.php" } }));
+    await act(async () => { findButton(root, "连接").props.onClick(); });
+    await flush();
+
+    const connectLine = JSON.parse(lines.find((line) => JSON.parse(line).op === "connect")!);
+    expect(connectLine).toMatchObject({ op: "connect", protocol: "behinder", payloadType: "php" });
+    act(() => renderer.unmount());
+  });
+
   it("surfaces connection errors from the engine", async () => {
     const bridge: { emit?: (event: ToolStreamEvent) => void } = {};
     const transport: WebshellTransport = {

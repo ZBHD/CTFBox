@@ -53,7 +53,7 @@ describe("webshell session client", () => {
     const { transport } = fakeTransport();
     const session = new WebshellSession(transport, "run-1");
 
-    const connected = await session.connect({ target: "http://h/s.php", password: "p", payloadType: "php", encoder: "base64" });
+    const connected = await session.connect({ target: "http://h/s.php", password: "p", protocol: "ctfbox", payloadType: "php", encoder: "base64" });
     expect(transport.start).toHaveBeenCalledTimes(1);
     expect(connected).toMatchObject({ ev: "connected", info: { user: "www-data" } });
 
@@ -67,6 +67,14 @@ describe("webshell session client", () => {
     expect(file).toMatchObject({ ev: "file", encoding: "base64", content: "cm9vdA==" });
 
     expect(transport.start).toHaveBeenCalledTimes(1); // 仅启动一次
+  });
+
+  it("forwards the selected protocol in the connect op", async () => {
+    const { transport, state } = fakeTransport();
+    const session = new WebshellSession(transport, "run-1");
+    await session.connect({ target: "http://h/s.php", password: "rebeyond", protocol: "behinder", payloadType: "php", encoder: "raw" });
+    const connectLine = JSON.parse(state.lines.find((line) => JSON.parse(line).op === "connect")!);
+    expect(connectLine).toMatchObject({ op: "connect", protocol: "behinder", password: "rebeyond" });
   });
 
   it("serializes concurrent operations in submission order", async () => {
@@ -130,7 +138,7 @@ describe("webshell session client", () => {
       send: vi.fn(async (_runId, _line) => undefined),
     });
     const session = new WebshellSession(transport, "run-1");
-    const pendingConnect = session.connect({ target: "bad", password: "p", payloadType: "php", encoder: "raw" });
+    const pendingConnect = session.connect({ target: "bad", password: "p", protocol: "ctfbox", payloadType: "php", encoder: "raw" });
     await tick();
     // 手动回吐 error 事件
     (transport.start as ReturnType<typeof vi.fn>).mock.calls[0][2]({
@@ -144,7 +152,7 @@ describe("webshell session client", () => {
   it("sends disconnect then stops the process", async () => {
     const { transport, state } = fakeTransport();
     const session = new WebshellSession(transport, "run-1");
-    await session.connect({ target: "http://h/s.php", password: "p", payloadType: "php", encoder: "raw" });
+    await session.connect({ target: "http://h/s.php", password: "p", protocol: "ctfbox", payloadType: "php", encoder: "raw" });
     await session.disconnect();
     expect(state.lines.some((line) => JSON.parse(line).op === "disconnect")).toBe(true);
     expect(transport.stop).toHaveBeenCalledWith("run-1");

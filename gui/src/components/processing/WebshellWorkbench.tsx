@@ -5,6 +5,7 @@ import {
   type WebshellConnectConfig,
   type WebshellEntry,
   type WebshellEvent,
+  type WebshellProtocol,
   type WebshellServerInfo,
   type WebshellTransport,
 } from "../../lib/webshellSession";
@@ -23,8 +24,33 @@ interface TerminalLine {
   output: string;
 }
 
-const PAYLOAD_TYPES: WebshellConnectConfig["payloadType"][] = ["php", "jsp", "asp", "aspx"];
-const ENCODERS: WebshellConnectConfig["encoder"][] = ["raw", "base64"];
+/** 各协议的能力矩阵：支持的载荷语言与编码器（随实现阶段扩展）。 */
+interface ProtocolCap {
+  value: WebshellProtocol;
+  label: string;
+  langs: WebshellConnectConfig["payloadType"][];
+  encoders: WebshellConnectConfig["encoder"][];
+}
+
+const PROTOCOLS: ProtocolCap[] = [
+  { value: "ctfbox", label: "CTFBox（第一方）", langs: ["php", "jsp", "asp", "aspx"], encoders: ["raw", "base64"] },
+  { value: "behinder", label: "冰蝎 Behinder v3", langs: ["php", "jsp", "aspx"], encoders: [] },
+  { value: "antsword", label: "蚁剑 AntSword", langs: ["php", "jsp", "asp", "aspx"], encoders: ["raw", "base64"] },
+];
+
+function capOf(protocol: WebshellProtocol): ProtocolCap {
+  return PROTOCOLS.find((item) => item.value === protocol) ?? PROTOCOLS[0];
+}
+
+/** 切换协议时，把载荷语言/编码器收敛到新协议支持的取值。 */
+function withProtocol(prev: WebshellConnectConfig, protocol: WebshellProtocol): WebshellConnectConfig {
+  const cap = capOf(protocol);
+  const payloadType = cap.langs.includes(prev.payloadType) ? prev.payloadType : cap.langs[0];
+  const encoder = cap.encoders.length === 0
+    ? "raw"
+    : cap.encoders.includes(prev.encoder) ? prev.encoder : cap.encoders[0];
+  return { ...prev, protocol, payloadType, encoder };
+}
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -49,9 +75,11 @@ export function WebshellWorkbench({ transport, runId }: WebshellWorkbenchProps) 
   const [config, setConfig] = useState<WebshellConnectConfig>({
     target: "",
     password: "pass",
+    protocol: "ctfbox",
     payloadType: "php",
     encoder: "base64",
   });
+  const cap = capOf(config.protocol);
   const [serverInfo, setServerInfo] = useState<WebshellServerInfo | null>(null);
   const [tab, setTab] = useState<Tab>("terminal");
   const [terminal, setTerminal] = useState<TerminalLine[]>([]);
@@ -209,8 +237,11 @@ export function WebshellWorkbench({ transport, runId }: WebshellWorkbenchProps) 
       <div className="webshell-connect">
         <label className="inline-control webshell-target"><span>目标</span><input value={config.target} placeholder="http://host/shell.php" disabled={connected} onChange={(event) => setConfig((prev) => ({ ...prev, target: event.target.value }))} /></label>
         <label className="inline-control"><span>密钥</span><input value={config.password} disabled={connected} onChange={(event) => setConfig((prev) => ({ ...prev, password: event.target.value }))} /></label>
-        <label className="inline-control"><span>类型</span><select value={config.payloadType} disabled={connected} onChange={(event) => setConfig((prev) => ({ ...prev, payloadType: event.target.value as WebshellConnectConfig["payloadType"] }))}>{PAYLOAD_TYPES.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
-        <label className="inline-control"><span>编码</span><select value={config.encoder} disabled={connected} onChange={(event) => setConfig((prev) => ({ ...prev, encoder: event.target.value as WebshellConnectConfig["encoder"] }))}>{ENCODERS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label className="inline-control"><span>协议</span><select value={config.protocol} disabled={connected} onChange={(event) => setConfig((prev) => withProtocol(prev, event.target.value as WebshellProtocol))}>{PROTOCOLS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label className="inline-control"><span>类型</span><select value={config.payloadType} disabled={connected || cap.langs.length <= 1} onChange={(event) => setConfig((prev) => ({ ...prev, payloadType: event.target.value as WebshellConnectConfig["payloadType"] }))}>{cap.langs.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
+        {cap.encoders.length > 0
+          ? <label className="inline-control"><span>编码</span><select value={config.encoder} disabled={connected} onChange={(event) => setConfig((prev) => ({ ...prev, encoder: event.target.value as WebshellConnectConfig["encoder"] }))}>{cap.encoders.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          : <label className="inline-control"><span>加密</span><input value="AES-128" disabled readOnly /></label>}
       </div>
 
       {serverInfo && <div className="webshell-serverinfo">

@@ -24,9 +24,12 @@ export interface WebshellEntry {
   size: number;
 }
 
+export type WebshellProtocol = "ctfbox" | "behinder" | "antsword";
+
 export interface WebshellConnectConfig {
   target: string;
   password: string;
+  protocol: WebshellProtocol;
   payloadType: "php" | "jsp" | "asp" | "aspx";
   encoder: "raw" | "base64";
 }

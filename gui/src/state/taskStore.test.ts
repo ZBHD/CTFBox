@@ -4,6 +4,8 @@ import {
   appendRun,
   clearTask,
   finishRun,
+  restoreRunRunning,
+  requestRunStop,
   createTask,
   applyToolStreamEvent,
   updateTaskContainingRun,
@@ -130,6 +132,37 @@ describe("in-memory task state", () => {
 
     expect(afterFirstExit.status).toBe("running");
     expect(finishRun(afterFirstExit, "run-2", "completed").status).toBe("completed");
+  });
+
+  it("keeps a stop-requested run active until its terminal exit arrives", () => {
+    const task = appendRun(createTask("sqlmap"), run);
+
+    const stopping = requestRunStop(task, run.id);
+
+    expect(stopping.runs[0].status).toBe("stopping");
+    expect(stopping.status).toBe("stopping");
+    expect(finishRun(stopping, run.id, "stopped").status).toBe("stopped");
+  });
+
+  it("restores a stop-requested run when the stop request fails to send", () => {
+    const stopping = requestRunStop(appendRun(createTask("sqlmap"), run), run.id);
+
+    const restored = restoreRunRunning(stopping, run.id);
+
+    expect(restored.runs[0].status).toBe("running");
+    expect(restored.status).toBe("running");
+  });
+
+  it("bounds completed command history while retaining stop-requested runs", () => {
+    let task = requestRunStop(appendRun(createTask("sqlmap"), { ...run, id: "stopping-run" }), "stopping-run");
+    for (let index = 0; index < MAX_TASK_RUNS + 20; index += 1) {
+      const id = `history-${index}`;
+      task = finishRun(appendRun(task, { ...run, id }), id, "completed");
+    }
+
+    expect(task.runs).toHaveLength(MAX_TASK_RUNS);
+    expect(task.runs[0].id).toBe("stopping-run");
+    expect(task.runs[0].status).toBe("stopping");
   });
 
   it("keeps a failed concurrent run visible after another run completes", () => {

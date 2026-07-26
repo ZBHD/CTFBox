@@ -137,6 +137,7 @@ textarea:-webkit-autofill:focus {
 .terminal-truncation { color: #d6a84d; }
 .run-status { padding: 2px 5px; border: 1px solid #35434d; border-radius: 2px; color: #778691; font: 8px "Segoe UI", sans-serif; }
 .run-status-running { border-color: #806326; color: var(--amber); }
+.run-status-stopping { border-color: #806326; color: #d6a84d; }
 .run-status-completed { border-color: #275844; color: #64caa5; }
 .run-status-failed { border-color: #703c43; color: var(--danger); }
 .command-preview { min-width: 0; flex: 0 0 auto; padding: 8px 12px 9px; border-bottom: 1px solid var(--border); background: #0d1419; }

@@ -7,6 +7,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { ToolRail } from "./components/ToolRail";
 import { ModeControls } from "./components/workbench/ModeControls";
 import { AutomationControls } from "./components/workbench/AutomationControls";
+import { CommandTerminal } from "./components/workbench/CommandTerminal";
 import { ParameterPanel } from "./components/workbench/ParameterPanel";
 import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import {
@@ -870,5 +871,39 @@ describe("App update integration", () => {
     await flush();
 
     expect(runCalls()).toHaveLength(1);
+  });
+
+  it("keeps a task visible until its requested stop reaches a terminal exit", async () => {
+    const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command: string) => command === "app_health"
+      ? { app: "CTFBox", version: "0.1.3", platform: "windows" }
+      : undefined);
+    const renderer = renderApp(adapter());
+    await flush();
+    act(() => renderer.root.findByType(ParameterPanel).props.onChange("url", "TARGET_URL"));
+    act(() => renderer.root.findByType(ModeControls).props.onRun());
+    await flush();
+
+    const runPayload = invokeMock.mock.calls.find(([command]) => command === "run_tool")?.[1] as {
+      request: { runId: string };
+      onEvent: { onmessage?: (event: ToolStreamEvent) => void };
+    };
+    act(() => renderer.root.findByType(ModeControls).props.onClear());
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledWith("stop_tool", { runId: runPayload.request.runId });
+    expect(renderer.root.findByType(CommandTerminal).props.runs).toHaveLength(1);
+    expect(renderer.root.findByType(CommandTerminal).props.runs[0].status).toBe("stopping");
+
+    act(() => runPayload.onEvent.onmessage?.({
+      event: "exit",
+      runId: runPayload.request.runId,
+      status: "stopped",
+      code: null,
+    }));
+    await flush();
+
+    expect(renderer.root.findByType(CommandTerminal).props.runs).toHaveLength(0);
   });
 });

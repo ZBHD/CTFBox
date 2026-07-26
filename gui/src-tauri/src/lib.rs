@@ -103,6 +103,32 @@ pub(crate) struct ProcessManager {
 }
 
 impl ProcessManager {
+    pub(crate) fn stop_run(&self, run_id: &str) -> Result<(), String> {
+        let child = self
+            .children
+            .lock()
+            .map_err(|_| "运行状态不可用".to_string())?
+            .get(run_id)
+            .ok_or_else(|| "找不到运行中的任务".to_string())?
+            .clone();
+        let mut process = child.lock().map_err(|_| "任务状态不可用".to_string())?;
+        if process
+            .try_wait()
+            .map_err(|error| format!("读取任务状态失败：{error}"))?
+            .is_some()
+        {
+            return Err("任务已结束".to_string());
+        }
+        process
+            .kill()
+            .map_err(|error| format!("停止工具失败：{error}"))?;
+        self.stop_requested
+            .lock()
+            .map_err(|_| "运行状态不可用".to_string())?
+            .insert(run_id.to_string());
+        Ok(())
+    }
+
     pub(crate) fn terminate_all(&self) -> usize {
         let children = self
             .children
@@ -500,25 +526,7 @@ fn send_tool_input(
 
 #[tauri::command]
 fn stop_tool(manager: State<'_, ProcessManager>, run_id: String) -> Result<(), String> {
-    let children = manager
-        .children
-        .lock()
-        .map_err(|_| "运行状态不可用".to_string())?;
-    let child = children
-        .get(&run_id)
-        .ok_or_else(|| "找不到运行中的任务".to_string())?
-        .clone();
-    manager
-        .stop_requested
-        .lock()
-        .map_err(|_| "运行状态不可用".to_string())?
-        .insert(run_id);
-    let result = child
-        .lock()
-        .map_err(|_| "任务状态不可用".to_string())?
-        .kill()
-        .map_err(|error| format!("停止工具失败：{error}"));
-    result
+    manager.stop_run(&run_id)
 }
 
 #[cfg(test)]
@@ -567,6 +575,30 @@ mod tests {
             .unwrap()
     }
 
+    #[cfg(windows)]
+    fn finished_child() -> Child {
+        use std::os::windows::process::CommandExt;
+        Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "exit 0"])
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    #[cfg(not(windows))]
+    fn finished_child() -> Child {
+        Command::new("sh")
+            .args(["-c", "exit 0"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
     #[test]
     fn disables_python_bytecode_for_bundled_tools() {
         assert_eq!(PYTHON_RUNTIME_FLAGS, ["-B", "-u"]);
@@ -595,6 +627,31 @@ mod tests {
             thread::sleep(Duration::from_millis(25));
         }
         assert!(exited, "managed child did not exit after termination");
+    }
+
+    #[test]
+    fn records_stop_request_only_after_a_successful_termination_signal() {
+        let manager = ProcessManager::default();
+        let child = Arc::new(Mutex::new(finished_child()));
+        manager
+            .children
+            .lock()
+            .unwrap()
+            .insert("already-exited".into(), child.clone());
+
+        for _ in 0..20 {
+            if child.lock().unwrap().try_wait().unwrap().is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+
+        assert!(manager.stop_run("already-exited").is_err());
+        assert!(!manager
+            .stop_requested
+            .lock()
+            .unwrap()
+            .contains("already-exited"));
     }
 
     #[test]

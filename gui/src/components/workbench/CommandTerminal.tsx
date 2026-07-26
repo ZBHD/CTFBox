@@ -15,6 +15,7 @@ interface CommandTerminalProps {
 const STATUS_LABEL: Record<CommandRun["status"], string> = {
   idle: "等待",
   running: "运行中",
+  stopping: "停止中",
   stopped: "已停止",
   completed: "已完成",
   failed: "失败",

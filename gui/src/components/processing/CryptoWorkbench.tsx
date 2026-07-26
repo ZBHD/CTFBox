@@ -1,7 +1,17 @@
 import { ArrowLeftRight, Copy, FileUp, Play, RotateCcw, ScanSearch } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
-import { analyzeAuto, CODEC_GROUPS, CODEC_LABELS, decodeCandidates, DEFAULT_CODEC_OPTIONS, processCrypto, type CodecReport, type CryptoCodec } from "../../lib/cryptoEngine";
+import {
+  analyzeAuto,
+  CODEC_GROUPS,
+  CODEC_LABELS,
+  decodeCandidates,
+  DEFAULT_CODEC_OPTIONS,
+  processCrypto,
+  type CodecReport,
+  type CryptoCodec,
+  type CryptoOptions,
+} from "../../lib/cryptoEngine";
 
 interface CryptoWorkbenchProps {
   mode: string;

@@ -1,6 +1,6 @@
 import type { LocalAnalysisState } from "../lib/lsbTypes";
 
-export type TaskStatus = "idle" | "running" | "stopped" | "completed" | "failed";
+export type TaskStatus = "idle" | "running" | "stopping" | "stopped" | "completed" | "failed";
 
 export interface CommandRun {
   id: string;
@@ -71,11 +71,23 @@ export function appendRun(state: TaskState, run: CommandRun): TaskState {
   };
 }
 
+export function isRunActive(run: CommandRun): boolean {
+  return run.status === "running" || run.status === "stopping";
+}
+
+function summarizeRuns(runs: CommandRun[]): TaskStatus {
+  if (runs.some((run) => run.status === "running")) return "running";
+  if (runs.some((run) => run.status === "stopping")) return "stopping";
+  if (runs.some((run) => run.status === "failed")) return "failed";
+  if (runs.some((run) => run.status === "stopped")) return "stopped";
+  return runs.length > 0 ? "completed" : "idle";
+}
+
 function boundRunHistory(runs: CommandRun[]) {
   let overflow = runs.length - MAX_TASK_RUNS;
   if (overflow <= 0) return runs;
   return runs.filter((run) => {
-    if (overflow <= 0 || run.status === "running") return true;
+    if (overflow <= 0 || isRunActive(run)) return true;
     overflow -= 1;
     return false;
   });
@@ -115,14 +127,21 @@ export function appendOutput(state: TaskState, runId: string, chunk: string): Ta
 
 export function finishRun(state: TaskState, runId: string, status: "completed" | "failed" | "stopped"): TaskState {
   const runs = boundRunHistory(state.runs.map((run) => run.id === runId ? { ...run, status } : run));
-  const taskStatus = runs.some((run) => run.status === "running")
-    ? "running"
-    : runs.some((run) => run.status === "failed")
-      ? "failed"
-      : runs.some((run) => run.status === "stopped")
-        ? "stopped"
-        : "completed";
-  return { ...state, runs, status: taskStatus };
+  return { ...state, runs, status: summarizeRuns(runs) };
+}
+
+export function requestRunStop(state: TaskState, runId: string): TaskState {
+  const runs = state.runs.map((run) => run.id === runId && run.status === "running"
+    ? { ...run, status: "stopping" as const }
+    : run);
+  return { ...state, runs, status: summarizeRuns(runs) };
+}
+
+export function restoreRunRunning(state: TaskState, runId: string): TaskState {
+  const runs = state.runs.map((run) => run.id === runId && run.status === "stopping"
+    ? { ...run, status: "running" as const }
+    : run);
+  return { ...state, runs, status: summarizeRuns(runs) };
 }
 
 function findingKey(finding: StructuredFinding) {

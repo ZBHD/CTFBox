@@ -44,7 +44,7 @@ import {
   type UpdateResult,
   type UpdateState,
 } from "./lib/updateManager";
-import { applyToolStreamEvent, appendOutput, appendRun, clearTask, createTask, finishRun, updateTaskContainingRun, type TaskState, type ToolStreamEvent } from "./state/taskStore";
+import { applyToolStreamEvent, appendOutput, appendRun, clearTask, createTask, finishRun, isRunActive, requestRunStop, restoreRunRunning, updateTaskContainingRun, type CommandRun, type TaskState, type ToolStreamEvent } from "./state/taskStore";
 
 interface HealthStatus {
   app: string;
@@ -110,6 +110,14 @@ function selectionKey(selection: ToolSelection) {
   return `${selection.toolId}:${selection.mode ?? "default"}`;
 }
 
+function taskHasActiveRuns(task: TaskState) {
+  return task.runs.some(isRunActive);
+}
+
+function getRunningRuns(task: TaskState): CommandRun[] {
+  return task.runs.filter((run) => run.status === "running");
+}
+
 interface AppProps {
   updateAdapter?: AppUpdateAdapter;
 }
@@ -145,13 +153,32 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const linkSequenceRef = useRef(0);
   const automationJobsRef = useRef<Record<string, Set<string>>>({});
   const automationTimeoutsRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const pendingClearRunIdsRef = useRef(new Map<string, Set<string>>());
   const streamEventBatcherRef = useRef<StreamEventBatcher<ToolStreamEvent>>();
   streamEventBatcherRef.current ??= new StreamEventBatcher((events) => {
-    setTasks((current) => events.reduce((next, event) => updateTaskContainingRun(
-      next,
-      event.runId,
-      (owner) => applyToolStreamEvent(owner, event),
-    ), current));
+    setTasks((current) => {
+      let next = events.reduce((tasksAfterEvent, event) => updateTaskContainingRun(
+        tasksAfterEvent,
+        event.runId,
+        (owner) => applyToolStreamEvent(owner, event),
+      ), current);
+
+      for (const event of events) {
+        if (event.event !== "exit") continue;
+        for (const pendingRunIds of pendingClearRunIdsRef.current.values()) {
+          pendingRunIds.delete(event.runId);
+        }
+      }
+
+      for (const [taskKey, pendingRunIds] of pendingClearRunIdsRef.current) {
+        if (pendingRunIds.size > 0) continue;
+        pendingClearRunIdsRef.current.delete(taskKey);
+        const pendingTask = next[taskKey];
+        if (pendingTask) next = { ...next, [taskKey]: clearTask(pendingTask) };
+      }
+
+      return next;
+    });
   });
 
   const commitUpdateState = useCallback((state: UpdateState) => {
@@ -384,11 +411,12 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   useEffect(() => () => {
     for (const timeout of automationTimeoutsRef.current.values()) clearTimeout(timeout);
     automationTimeoutsRef.current.clear();
+    pendingClearRunIdsRef.current.clear();
   }, []);
 
   const runWithTaskParameters = useCallback((taskKey: string, taskSnapshot: TaskState, parameters: ToolParameters, automationJob?: AutomationJob, timeoutSeconds?: number) => {
     if (!getPlugin(taskSnapshot.toolId)?.runner) return;
-    if (!automationJob && taskSnapshot.status === "running") return;
+    if (!automationJob && taskHasActiveRuns(taskSnapshot)) return;
     const nextCommand = buildCommand(taskSnapshot.toolId, taskSnapshot.edition, parameters);
     if (nextCommand.length <= 1) return;
     const id = `run-${crypto.randomUUID()}`;
@@ -434,11 +462,11 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
       const timeout = setTimeout(() => {
         automationTimeoutsRef.current.delete(id);
         setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
-          appendOutput(owner, id, `\n自动化子任务已达到 ${limit} 秒时限，正在停止。\n`),
+          requestRunStop(appendOutput(owner, id, `\n自动化子任务已达到 ${limit} 秒时限，正在停止。\n`), id),
         ));
         void invoke("stop_tool", { runId: id }).catch((error) => {
           setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
-            appendOutput(owner, id, `\n超时停止失败：${error instanceof Error ? error.message : String(error)}\n`),
+            restoreRunRunning(appendOutput(owner, id, `\n超时停止失败：${error instanceof Error ? error.message : String(error)}\n`), id),
           ));
         });
       }, limit * 1000);
@@ -457,16 +485,23 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   };
 
   const runCommand = () => {
-    if (task.status === "running") {
+    if (taskHasActiveRuns(task)) {
       if (automation.phase === "running") {
         automationJobsRef.current[key]?.clear();
         setAutomations((current) => ({ ...current, [key]: { ...(current[key] ?? IDLE_AUTOMATION), phase: "stopped" } }));
       }
-      for (const activeRun of task.runs.filter((run) => run.status === "running")) {
+      const runningRuns = getRunningRuns(task);
+      if (runningRuns.length === 0) return;
+      setTasks((current) => runningRuns.reduce((next, activeRun) => updateTaskContainingRun(
+        next,
+        activeRun.id,
+        (owner) => requestRunStop(owner, activeRun.id),
+      ), current));
+      for (const activeRun of runningRuns) {
         clearAutomationTimeout(activeRun.id);
         void invoke("stop_tool", { runId: activeRun.id }).catch((error) => {
           setTasks((current) => updateTaskContainingRun(current, activeRun.id, (owner) =>
-            appendOutput(owner, activeRun.id, `\n停止失败：${error instanceof Error ? error.message : String(error)}\n`),
+            restoreRunRunning(appendOutput(owner, activeRun.id, `\n停止失败：${error instanceof Error ? error.message : String(error)}\n`), activeRun.id),
           ));
         });
       }
@@ -476,7 +511,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   };
 
   const applyAndRunSuggestion = (suggestion: TaskSuggestion) => {
-    if (task.status === "running") return;
+    if (taskHasActiveRuns(task)) return;
     const snapshot = applySuggestionPatch(selection.toolId, task.parameters as ToolParameters, suggestion.patch);
     updateCurrentTask((current) => ({ ...current, parameters: snapshot }));
     runWithParameters(snapshot);
@@ -494,7 +529,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     const taskKey = key;
     automationJobsRef.current[taskKey]?.clear();
     setAutomations((current) => ({ ...current, [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), phase: "stopped", started: 0 } }));
-    const activeRuns = task.runs.filter((run) => run.status === "running");
+    const activeRuns = task.runs.filter(isRunActive);
+    const runningRuns = activeRuns.filter((run) => run.status === "running");
     activeRuns.forEach((run) => clearAutomationTimeout(run.id));
     const clear = () => setTasks((current) => {
       const currentTask = current[taskKey];
@@ -504,11 +540,17 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
       clear();
       return;
     }
-    void Promise.all(activeRuns.map((run) => invoke("stop_tool", { runId: run.id })))
-      .then(clear)
-      .catch((error) => setTasks((current) => activeRuns.reduce((next, run) => updateTaskContainingRun(next, run.id, (owner) =>
-        appendOutput(owner, run.id, `\n清空前停止失败：${error instanceof Error ? error.message : String(error)}\n`),
-      ), current)));
+    pendingClearRunIdsRef.current.set(taskKey, new Set(activeRuns.map((run) => run.id)));
+    setTasks((current) => runningRuns.reduce((next, run) => updateTaskContainingRun(
+      next,
+      run.id,
+      (owner) => requestRunStop(owner, run.id),
+    ), current));
+    void Promise.all(runningRuns.map((run) => invoke("stop_tool", { runId: run.id }).catch((error) => {
+      setTasks((current) => updateTaskContainingRun(current, run.id, (owner) =>
+        restoreRunRunning(appendOutput(owner, run.id, `\n清空前停止失败：${error instanceof Error ? error.message : String(error)}\n`), run.id),
+      ));
+    })));
   };
 
   const toggleRun = (runId: string) => {
@@ -523,23 +565,35 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     () => flagScannerRef.current.scan(key, task, flagSettings, prefixes),
     [flagSettings, key, prefixes, task],
   );
-  const activeAutomationRuns = task.runs.filter((run) => run.status === "running" && run.automationJobId).length;
+  const activeAutomationRuns = task.runs.filter((run) => isRunActive(run) && run.automationJobId).length;
   const updateAutomation = (updater: (current: AutomationState) => AutomationState) => {
     setAutomations((current) => ({ ...current, [key]: updater(current[key] ?? IDLE_AUTOMATION) }));
   };
   const stopAutomationForTask = useCallback((taskKey: string, taskSnapshot: TaskState, phase: AutomationPhase = "stopped") => {
     automationJobsRef.current[taskKey]?.clear();
     setAutomations((current) => ({ ...current, [taskKey]: { ...(current[taskKey] ?? IDLE_AUTOMATION), phase } }));
-    for (const run of taskSnapshot.runs.filter((item) => item.status === "running" && item.automationJobId)) {
+    const runningRuns = taskSnapshot.runs.filter((item) => item.status === "running" && item.automationJobId);
+    if (runningRuns.length > 0) {
+      setTasks((current) => runningRuns.reduce((next, run) => updateTaskContainingRun(
+        next,
+        run.id,
+        (owner) => requestRunStop(owner, run.id),
+      ), current));
+    }
+    for (const run of runningRuns) {
       clearAutomationTimeout(run.id);
-      void invoke("stop_tool", { runId: run.id }).catch(() => undefined);
+      void invoke("stop_tool", { runId: run.id }).catch((error) => {
+        setTasks((current) => updateTaskContainingRun(current, run.id, (owner) =>
+          restoreRunRunning(appendOutput(owner, run.id, `\n停止自动化失败：${error instanceof Error ? error.message : String(error)}\n`), run.id),
+        ));
+      });
     }
   }, [clearAutomationTimeout]);
   const stopAutomation = () => {
     stopAutomationForTask(key, task);
   };
   const startAutomation = () => {
-    if (!supportsFlagHunt || !canRun || task.runs.some((run) => run.status === "running")) return;
+    if (!supportsFlagHunt || !canRun || task.runs.some(isRunActive)) return;
     automationJobsRef.current[key] = new Set();
     updateAutomation((current) => ({ ...current, phase: "running", started: 0 }));
   };
@@ -560,7 +614,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
         maxSqlmapDumps: automationState.maxSqlmapDumps,
       });
       const pending = jobs.filter((job) => !started.has(job.id));
-      const active = taskSnapshot.runs.filter((run) => run.status === "running" && run.automationJobId).length;
+      const active = taskSnapshot.runs.filter((run) => isRunActive(run) && run.automationJobId).length;
       const capacity = Math.max(0, automationState.concurrency - active);
       if (capacity > 0 && pending.length > 0) {
         const next = pending.slice(0, capacity);
@@ -633,7 +687,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
             plugin={plugin}
             modeLabel={selection.mode ? MODE_NAMES[selection.mode] : undefined}
             edition={task.edition}
-            running={task.status === "running"}
+            running={taskHasActiveRuns(task)}
             canRun={canRun}
             executionControls={isWebTool}
             onEditionChange={(edition) => updateCurrentTask((current) => ({ ...current, edition }))}
@@ -659,7 +713,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
             isWebTool ? <div className="web-workspace-grid">
             <div className="web-output-stack">
               <CommandTerminal runs={task.runs} commandPreview={command.join(" ")} onToggleRun={toggleRun} flagHits={flagHits} runningRunId={task.runs.find((run) => run.status === "running")?.id} onSendInput={(input) => { const run = task.runs.find((item) => item.status === "running"); if (run) sendToolInput(run.id, input); }} />
-              <ResultsPanel findings={task.findings} suggestions={suggestions} running={task.status === "running"} onApplySuggestion={applyAndRunSuggestion} flagEnabled={flagSettings.enabled} flagPrefixes={prefixes} flagHits={flagHits} />
+              <ResultsPanel findings={task.findings} suggestions={suggestions} running={taskHasActiveRuns(task)} onApplySuggestion={applyAndRunSuggestion} flagEnabled={flagSettings.enabled} flagPrefixes={prefixes} flagHits={flagHits} />
             </div>
             <ParameterPanel toolId={selection.toolId} parameters={task.parameters as ToolParameters} findings={task.findings} onChange={updateParameter} />
           </div> : selection.toolId === "crypto" ?

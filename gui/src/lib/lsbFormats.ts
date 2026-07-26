@@ -1,4 +1,4 @@
-import { detectFlags } from "./flagDetector";
+import { assessFlagCandidate, detectFlags } from "./flagDetector";
 import { unpackArchive } from "./lsbArchive";
 import type { LsbExtractedFile } from "./lsbTypes";
 
@@ -172,8 +172,14 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
   let score = bytes.length === 0 ? -100 : 0;
 
   for (const hit of flags) {
-    score += hit.source === "plain" ? 120 : 90;
-    evidence.push(`发现 Flag：${hit.text}`);
+    const assessment = assessFlagCandidate(hit.text);
+    if (assessment.confidence === "high") {
+      score += hit.source === "plain" ? 120 : 90;
+      evidence.push(`发现 Flag：${hit.text}`);
+    } else {
+      score += 30;
+      evidence.push(`低置信 Flag 候选：${hit.text}`);
+    }
   }
   for (const flag of likelyFlags) {
     score += 110;
@@ -199,8 +205,14 @@ export function scoreLsbPayload(bytes: Uint8Array, prefixes: readonly string[], 
       for (const child of file.children) {
         if (!child.text) continue;
         for (const hit of detectFlags(child.text, prefixes, caseSensitive)) {
-          score += 100;
-          evidence.push(`归档内发现 Flag：${hit.text}`);
+          const assessment = assessFlagCandidate(hit.text);
+          if (assessment.confidence === "high") {
+            score += 100;
+            evidence.push(`归档内发现 Flag：${hit.text}`);
+          } else {
+            score += 25;
+            evidence.push(`归档内低置信 Flag 候选：${hit.text}`);
+          }
         }
         for (const flag of probableFlags(child.text)) {
           if (evidence.some((item) => item.endsWith(`Flag：${flag}`))) continue;

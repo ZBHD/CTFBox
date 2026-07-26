@@ -6,14 +6,18 @@ interface StegoParameterPanelProps {
   onChange: (analysis: StegoLocalAnalysis) => void;
 }
 
-const CHECKS: Array<{ key: keyof Pick<StegoOptions, "metadata" | "structure" | "trailing" | "strings" | "visuals" | "dct" | "frequency">; label: string; description: string; aria: string }> = [
+const CHECKS: Array<{ key: keyof Pick<StegoOptions, "metadata" | "structure" | "channels" | "dimensions" | "recursiveCarving" | "trailing" | "strings" | "visuals" | "dct" | "frequency" | "ocr">; label: string; description: string; aria: string }> = [
   { key: "metadata", label: "EXIF / XMP / 文本块", description: "TIFF IFD、PNG 文本、ICC、JPEG APP", aria: "提取元数据" },
   { key: "structure", label: "文件结构", description: "块、标记、长度与 PNG CRC", aria: "分析文件结构" },
+  { key: "channels", label: "PNG / APNG / GIF 信道", description: "块长度、CRC 位流、帧延时与偏移坐标", aria: "分析结构信道" },
+  { key: "dimensions", label: "图片尺寸恢复", description: "PNG CRC 反推、BMP 行跨度、GIF LZW 像素数", aria: "分析图片尺寸" },
+  { key: "recursiveCarving", label: "全文件递归雕刻", description: "JPEG/PNG/ZIP、zlib、gzip、BZip2、LZMA", aria: "执行递归雕刻" },
   { key: "trailing", label: "尾部附加数据", description: "规范结束位置、熵与嵌套文件", aria: "分析尾部附加数据" },
   { key: "strings", label: "字符串与编码", description: "ASCII、Unicode、GB18030、Base64/Hex/URL", aria: "提取字符串" },
   { key: "visuals", label: "像素视图", description: "RGBA、灰度、拉伸与 8 个位平面", aria: "生成像素视图" },
   { key: "dct", label: "JPEG DCT", description: "量化系数、零值率与奇偶分布", aria: "分析 JPEG DCT" },
   { key: "frequency", label: "二维 FFT", description: "中心化幅度谱、频带能量与峰值", aria: "执行二维 FFT" },
+  { key: "ocr", label: "离线 OCR", description: "异常帧、修复图与雕刻图文字识别", aria: "执行离线 OCR" },
 ];
 
 export function StegoParameterPanel({ analysis, disabled, onChange }: StegoParameterPanelProps) {

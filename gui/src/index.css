@@ -414,6 +414,11 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .stego-source-facts { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; width: 100%; padding: 9px 11px; border: 1px solid #26343d; border-radius: 3px; background: #0c1318; }
 .stego-source-facts span { color: #6f7f89; font-size: 9px; }
 .stego-source-facts strong { color: #b5c2ca; font: 600 9px/1.4 "Cascadia Mono", Consolas, monospace; text-align: right; }
+.stego-batch-parts { width: 100%; max-height: 132px; margin: 0; padding: 0; overflow: auto; border: 1px solid #26343d; border-radius: 3px; background: #0c1318; list-style: none; }
+.stego-batch-parts li { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 6px 8px; border-bottom: 1px solid var(--border-soft); }
+.stego-batch-parts li:last-child { border-bottom: 0; }
+.stego-batch-parts span { overflow: hidden; color: #9cabb4; font: 9px/1.35 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.stego-batch-parts small { color: #60717b; font: 8px/1.35 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
 .stego-check-row { min-height: 45px; display: grid; grid-template-columns: 17px minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px 6px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
 .stego-check-row input { width: 14px; height: 14px; margin: 0; accent-color: var(--green); }
 .stego-check-row > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -439,6 +444,10 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .stego-finding > span { display: block; margin-bottom: 3px; color: #60717b; font: 8px/1.3 "Cascadia Mono", Consolas, monospace; }
 .stego-finding strong { display: block; color: #bdc8ce; font-size: 9px; }
 .stego-finding p { margin: 4px 0 0; color: #84949d; font: 9px/1.45 "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.stego-candidate-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.stego-finding > .stego-candidate-actions { margin-top: 6px; }
+.stego-candidate-preview { width: 100%; height: 150px; display: grid; margin: 7px 0 0; place-items: center; overflow: hidden; border: 1px solid #273740; background: #080d11; }
+.stego-candidate-preview img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 .stego-finding-high { border-color: #773d45; border-left-color: #df737c; background: #221519; }
 .stego-finding-high strong { color: #f0a0a7; }
 .stego-finding-suspicious { border-color: #665027; border-left-color: #d8a94b; background: #201b11; }
@@ -463,7 +472,7 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .stego-parity-grid small { position: relative; z-index: 1; display: block; padding: 3px; color: #aebdc5; font: 7px/1 "Cascadia Mono", Consolas, monospace; }
 .stego-files ul { margin: 0; padding: 0; list-style: none; }
 .stego-file { margin-bottom: 7px; }
-.stego-file > div { min-height: 39px; display: grid; grid-template-columns: 18px minmax(0, 1fr) 28px; align-items: center; gap: 6px; padding: 5px 7px; border: 1px solid #293740; border-radius: 3px; background: #10171c; }
+.stego-file > div { min-height: 39px; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 5px 7px; border: 1px solid #293740; border-radius: 3px; background: #10171c; }
 .stego-file > div > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .stego-file strong { color: #b9c5cc; font-size: 9px; overflow-wrap: anywhere; }
 .stego-file small { color: #63737d; font: 8px/1.35 "Cascadia Mono", Consolas, monospace; }
@@ -728,7 +737,10 @@ body { font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] .lsb-file-node small { color: #61747d; }
 :root[data-theme="light"] .lsb-file-node pre { color: #435861; background: #f2f6f7; }
 :root[data-theme="light"] .stego-image-preview { border-color: #cad5d9; background: #f3f6f7; }
-:root[data-theme="light"] .stego-source-facts, :root[data-theme="light"] .stego-summary > span, :root[data-theme="light"] .stego-finding, :root[data-theme="light"] .stego-visual, :root[data-theme="light"] .stego-file > div { border-color: #d3dde0; background: #f7f9fa; }
+:root[data-theme="light"] .stego-source-facts, :root[data-theme="light"] .stego-batch-parts, :root[data-theme="light"] .stego-summary > span, :root[data-theme="light"] .stego-finding, :root[data-theme="light"] .stego-visual, :root[data-theme="light"] .stego-file > div { border-color: #d3dde0; background: #f7f9fa; }
+:root[data-theme="light"] .stego-batch-parts span { color: #354850; }
+:root[data-theme="light"] .stego-batch-parts small { color: #61747d; }
+:root[data-theme="light"] .stego-candidate-preview { border-color: #cad5d9; background: #f3f6f7; }
 :root[data-theme="light"] .stego-source-facts span, :root[data-theme="light"] .stego-check-row small, :root[data-theme="light"] .stego-summary > span, :root[data-theme="light"] .stego-finding > span, :root[data-theme="light"] .stego-visual span, :root[data-theme="light"] .stego-file small { color: #61747d; }
 :root[data-theme="light"] .stego-source-facts strong, :root[data-theme="light"] .stego-check-row strong, :root[data-theme="light"] .stego-summary strong, :root[data-theme="light"] .stego-finding strong, :root[data-theme="light"] .stego-visual strong, :root[data-theme="light"] .stego-file strong { color: #354850; }
 :root[data-theme="light"] .stego-check-row:has(input:checked) { background: #e2f1eb; }
@@ -842,6 +854,7 @@ body { font-size: 13px; line-height: 1.45; }
   .lsb-result-detail > header { align-items: flex-start; flex-direction: column; }
   .stego-visual-grid { grid-template-columns: minmax(0, 1fr); }
   .stego-summary, .stego-findings { grid-template-columns: minmax(0, 1fr); }
+  .stego-candidate-preview { height: 120px; }
   .stego-table { min-width: 620px; }
 }
 

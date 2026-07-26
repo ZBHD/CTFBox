@@ -1,4 +1,4 @@
-import { detectFlags } from "./flagDetector";
+import { assessFlagCandidate, detectFlags } from "./flagDetector";
 import type { StegoFinding, StegoStringHit } from "./stegoTypes";
 
 export interface StegoStringOptions {
@@ -176,11 +176,12 @@ export function extractStegoStrings(bytes: Uint8Array, options: StegoStringOptio
     for (const flag of hit.flags) {
       if (reportedFlags.has(flag)) continue;
       reportedFlags.add(flag);
+      const assessment = assessFlagCandidate(flag);
       findings.push({
         id: `string-flag-${findings.length}-${hit.offset}`,
-        severity: "high",
+        severity: assessment.confidence === "high" ? "high" : "suspicious",
         source: hit.decodedFrom ? `${hit.decodedFrom} 解码` : hit.encoding,
-        title: "发现 Flag",
+        title: assessment.confidence === "high" ? "发现 Flag" : "疑似 Flag",
         detail: flag,
         offset: hit.offset,
       });

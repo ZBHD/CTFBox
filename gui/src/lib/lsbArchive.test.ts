@@ -48,6 +48,18 @@ describe("LSB archive extraction", () => {
     });
   });
 
+  it("extracts a GZIP member when unrelated carrier bytes follow its trailer", () => {
+    const archive = gzipSync(strToU8("ctfshow{gzip-with-tail}"));
+    const carrier = new Uint8Array(archive.length + 12);
+    carrier.set(archive);
+    carrier.set([1, 2, 3, 4, 5, 6, 7, 8, 0xff, 0xff, 0xff, 0x7f], archive.length);
+
+    expect(unpackArchive(carrier, "application/gzip")[0]).toMatchObject({
+      name: "payload",
+      text: "ctfshow{gzip-with-tail}",
+    });
+  });
+
   it("rejects unsafe paths without dropping safe entries", () => {
     const archive = zipSync({
       "../escape.txt": strToU8("escape"),

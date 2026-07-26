@@ -56,4 +56,19 @@ describe("stego string extraction", () => {
     expect(result.hits).toHaveLength(5);
     expect(new Set(result.hits.map((hit) => `${hit.offset}:${hit.text}`)).size).toBe(5);
   });
+
+  it("does not promote a short regex match to a high-confidence flag", () => {
+    const result = extractStegoStrings(encoder.encode("marker ctfshow{32} end"), {
+      minimumLength: 4,
+      prefixes: ["ctfshow"],
+      caseSensitive: false,
+    });
+
+    expect(result.findings).toContainEqual(expect.objectContaining({
+      severity: "suspicious",
+      title: "疑似 Flag",
+      detail: "ctfshow{32}",
+    }));
+    expect(result.findings.some((finding) => finding.severity === "high")).toBe(false);
+  });
 });

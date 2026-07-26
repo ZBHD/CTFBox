@@ -118,6 +118,15 @@ describe("LSB payload previews and scoring", () => {
     expect(scored.preview).toContain("ctfshow{auto-prefix}");
   });
 
+  it("downgrades short configured-prefix matches instead of awarding final-flag score", () => {
+    const short = scoreLsbPayload(encoder.encode("ctfshow{32}"), ["ctfshow"], false);
+    const complete = scoreLsbPayload(encoder.encode("ctfshow{0cb07add909d0d60a92101a8b5c7223a}"), ["ctfshow"], false);
+
+    expect(short.evidence).toContain("低置信 Flag 候选：ctfshow{32}");
+    expect(short.evidence).not.toContain("发现 Flag：ctfshow{32}");
+    expect(complete.score - short.score).toBeGreaterThanOrEqual(70);
+  });
+
   it("rewards structurally complete embedded files", () => {
     const scored = scoreLsbPayload(concat(Uint8Array.of(1, 2), minimalPng()), ["ctfshow"], false);
     expect(scored.mediaType).toBe("image/png");

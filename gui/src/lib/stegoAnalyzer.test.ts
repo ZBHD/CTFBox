@@ -16,8 +16,10 @@ describe("combined stego analyzer", () => {
       onProgress: (progress) => stages.push(progress.stage),
     });
 
-    expect(stages).toEqual(["structure", "metadata", "strings", "visuals", "dct", "frequency"]);
+    expect(stages).toEqual(["structure", "channels", "dimensions", "carving", "metadata", "strings", "visuals", "dct", "frequency"]);
     expect(report.findings[0]).toMatchObject({ severity: "high", detail: "ctfshow{inside}" });
+    expect(report.channels).toEqual([]);
+    expect(report.repairs).toEqual([]);
     expect(report.visuals).toHaveLength(16);
     expect(report.visuals.at(-1)?.id).toBe("fft");
   });
@@ -30,11 +32,16 @@ describe("combined stego analyzer", () => {
       visuals: false,
       dct: false,
       frequency: false,
+      channels: false,
+      dimensions: false,
+      recursiveCarving: false,
     }, { signal: new AbortController().signal });
 
     expect(report.strings).toHaveLength(0);
     expect(report.visuals).toHaveLength(0);
     expect(report.dct).toBeUndefined();
+    expect(report.channels).toHaveLength(0);
+    expect(report.repairs).toHaveLength(0);
     expect(report.findings.every((finding) => finding.source !== "ASCII")).toBe(true);
   });
 

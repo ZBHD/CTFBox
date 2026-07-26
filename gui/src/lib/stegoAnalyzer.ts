@@ -1,6 +1,12 @@
 import { analyzeJpegDct } from "./jpegDct";
+import { analyzeAnimationFrames } from "./stegoAnimation";
+import { analyzeStegoChannels } from "./stegoChannels";
+import { analyzeImageDimensions } from "./stegoDimensions";
+import { scanEmbeddedContent } from "./stegoCarving";
 import { analyzeFrequency, buildPixelVisuals } from "./stegoFrequency";
 import { extractStegoMetadata } from "./stegoMetadata";
+import { reinterpretPngAsBmp } from "./stegoPixelCarving";
+import { analyzePngChunkRepairs } from "./stegoPngEditor";
 import { extractStegoStrings } from "./stegoStrings";
 import { analyzeStructure } from "./stegoStructure";
 import type {
@@ -14,11 +20,15 @@ import type {
 export const DEFAULT_STEGO_OPTIONS: StegoOptions = {
   metadata: true,
   structure: true,
+  channels: true,
+  dimensions: true,
+  recursiveCarving: true,
   trailing: true,
   strings: true,
   visuals: true,
   dct: true,
   frequency: true,
+  ocr: true,
   minimumStringLength: 4,
   fftSize: 256,
 };
@@ -53,6 +63,9 @@ function compareFindings(left: StegoFinding, right: StegoFinding) {
 export async function analyzeStego(input: StegoAnalysisInput, options: StegoOptions, hooks: StegoAnalysisHooks): Promise<StegoReport> {
   const stages: StegoProgress["stage"][] = [];
   if (options.structure || options.trailing) stages.push("structure");
+  if (options.channels) stages.push("channels");
+  if (options.dimensions) stages.push("dimensions");
+  if (options.recursiveCarving) stages.push("carving");
   if (options.metadata) stages.push("metadata");
   if (options.strings) stages.push("strings");
   if (options.visuals) stages.push("visuals");
@@ -60,7 +73,7 @@ export async function analyzeStego(input: StegoAnalysisInput, options: StegoOpti
   if (options.frequency) stages.push("frequency");
 
   const findings: StegoFinding[] = [];
-  const report: StegoReport = { format: "未知", findings, sections: [], metadata: [], strings: [], visuals: [], carvedFiles: [] };
+  const report: StegoReport = { format: "未知", findings, sections: [], metadata: [], strings: [], visuals: [], carvedFiles: [], channels: [], repairs: [] };
   let completed = 0;
   const beforeStage = async (stage: StegoProgress["stage"]) => {
     if (hooks.signal.aborted) throw abortError();
@@ -101,10 +114,95 @@ export async function analyzeStego(input: StegoAnalysisInput, options: StegoOpti
     report.format = detectedFormat;
   }
 
+  if (options.channels) {
+    await beforeStage("channels");
+    try {
+      const channels = analyzeStegoChannels(input.bytes, input.prefixes ?? [], input.caseSensitive ?? false);
+      report.channels = channels.candidates;
+      report.visuals.push(...channels.visuals);
+      findings.push(...channels.findings);
+    } catch (error) {
+      findings.push(failure("结构信道", error));
+    }
+    finishStage();
+  }
+
+  if (options.dimensions) {
+    await beforeStage("dimensions");
+    try {
+      const dimensions = analyzeImageDimensions(input.bytes);
+      const pngChunks = analyzePngChunkRepairs(input.bytes);
+      report.repairs = [...dimensions.repairs, ...pngChunks.repairs];
+      findings.push(...dimensions.findings);
+      findings.push(...pngChunks.findings);
+    } catch (error) {
+      findings.push(failure("尺寸恢复", error));
+    }
+    finishStage();
+  }
+
+  if (options.recursiveCarving) {
+    await beforeStage("carving");
+    try {
+      const carving = await scanEmbeddedContent(input.bytes, {
+        prefixes: input.prefixes ?? [],
+        caseSensitive: input.caseSensitive ?? false,
+      });
+      const merged = new Map(report.carvedFiles.map((file) => [`${file.offset}:${file.mediaType}:${file.bytes.length}`, file]));
+      for (const file of carving.files) {
+        const key = `${file.offset}:${file.mediaType}:${file.bytes.length}`;
+        const previous = merged.get(key);
+        if (!previous || (file.children?.length ?? 0) > (previous.children?.length ?? 0)) merged.set(key, file);
+      }
+      report.carvedFiles = [...merged.values()].sort((left, right) => left.offset - right.offset || right.bytes.length - left.bytes.length);
+      findings.push(...carving.findings);
+      if (detectedFormat === "PNG") {
+        const converted = reinterpretPngAsBmp(input.bytes);
+        if (converted.supported) {
+          const pixelCarving = await scanEmbeddedContent(converted.bytes, {
+            prefixes: input.prefixes ?? [],
+            caseSensitive: input.caseSensitive ?? false,
+          });
+          if (pixelCarving.files.length > 0) {
+            report.repairs ??= [];
+            report.repairs.push({
+              id: "png-pixels-as-bmp",
+              format: "BMP",
+              label: "PNG 像素无损重解释为 24 位 BMP",
+              width: converted.width,
+              height: converted.height,
+              confidence: "exact",
+              detail: `按原始 PNG 滤波字节恢复 RGB，并以 BGR 倒序扫描线写出；发现 ${pixelCarving.files.length} 个嵌入候选`,
+              bytes: converted.bytes,
+            });
+            report.carvedFiles.push({
+              name: "png-pixels-as-bmp.bmp",
+              mediaType: "image/bmp",
+              offset: 0,
+              bytes: converted.bytes,
+              children: pixelCarving.files,
+            });
+            findings.push(...pixelCarving.findings.map((finding) => ({
+              ...finding,
+              id: `pixel-${finding.id}`,
+              source: `像素重解释 · ${finding.source}`,
+            })));
+          }
+        }
+      }
+    } catch (error) {
+      findings.push(failure("递归雕刻", error));
+    }
+    finishStage();
+  }
+
   if (options.metadata) {
     await beforeStage("metadata");
     try {
-      const metadata = extractStegoMetadata(input.bytes);
+      const metadata = extractStegoMetadata(input.bytes, {
+        prefixes: input.prefixes ?? [],
+        caseSensitive: input.caseSensitive ?? false,
+      });
       report.metadata = metadata.entries;
       findings.push(...metadata.findings);
     } catch (error) {
@@ -132,6 +230,10 @@ export async function analyzeStego(input: StegoAnalysisInput, options: StegoOpti
   if (options.visuals) {
     await beforeStage("visuals");
     try {
+      const animation = analyzeAnimationFrames(input.bytes);
+      report.visuals.push(...animation.visuals);
+      report.carvedFiles.push(...animation.files);
+      findings.push(...animation.findings);
       if (input.pixels) report.visuals.push(...buildPixelVisuals(input.pixels));
       else findings.push({ id: "visuals-no-pixels", severity: "info", source: "像素", title: "没有可解码像素", detail: "仍已执行字节级分析" });
     } catch (error) {

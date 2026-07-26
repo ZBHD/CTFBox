@@ -1,4 +1,4 @@
-import { getPlugin, type PluginEdition } from "./pluginRegistry";
+import { getPlugin, runnerCommandName, type PluginEdition } from "./pluginRegistry";
 import { getToolSchema } from "./toolSchemas";
 
 export type ParameterValue = string | boolean | number | undefined;
@@ -10,7 +10,7 @@ export function buildCommand(
   parameters: ToolParameters,
 ): string[] {
   const plugin = getPlugin(toolId);
-  const executable = plugin?.runner?.launcher ?? `${toolId}.cmd`;
+  const executable = runnerCommandName(plugin) ?? `${toolId}.cmd`;
   const argv = [executable];
   if (edition === "cn" && plugin?.editions?.includes("cn")) argv.push("-cn");
 

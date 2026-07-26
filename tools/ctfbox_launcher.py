@@ -22,20 +22,27 @@ def normalize_windows_path(path: Path) -> Path:
 ROOT = normalize_windows_path(Path(__file__).resolve()).parents[1]
 
 
-def load_tool_registry(path: Path) -> dict[str, tuple[str, str]]:
+def load_tool_registry(path: Path) -> dict[str, tuple[str, str, str]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if payload.get("version") != 1 or not isinstance(payload.get("tools"), list):
         raise ValueError("工具注册表格式无效")
-    tools: dict[str, tuple[str, str]] = {}
+    tools: dict[str, tuple[str, str, str]] = {}
     for item in payload["tools"]:
         if not isinstance(item, dict) or not isinstance(item.get("runner"), dict):
             continue
+        runner = item["runner"]
+        kind = runner.get("kind", "python")
+        # 二进制工具由 Rust 直接 spawn，不经本启动器。
+        if kind == "binary":
+            continue
         tool_id = item.get("id")
-        directory = item["runner"].get("sourceDirectory")
-        entry = item["runner"].get("entry")
+        directory = runner.get("sourceDirectory")
+        entry = runner.get("entry")
+        if kind not in ("python", "session"):
+            raise ValueError(f"不支持的运行器类型：{kind}")
         if not all(isinstance(value, str) and value for value in (tool_id, directory, entry)):
             raise ValueError("工具运行器配置无效")
-        tools[tool_id.lower()] = (directory, entry)
+        tools[tool_id.lower()] = (kind, directory, entry)
     if not tools:
         raise ValueError("工具注册表没有可运行工具")
     return tools
@@ -55,8 +62,12 @@ def main() -> int:
     if use_chinese:
         arguments = arguments[1:]
 
-    directory, entry = TOOLS[tool]
-    edition_root = ROOT / ("CNversion" if use_chinese else "Original") / directory
+    kind, directory, entry = TOOLS[tool]
+    # 会话客户端（webshell 等）是第一方长驻引擎，位于 tools/clients，且无版本分支。
+    if kind == "session":
+        edition_root = ROOT / "tools" / "clients" / directory
+    else:
+        edition_root = ROOT / ("CNversion" if use_chinese else "Original") / directory
     script = edition_root / entry
     if not script.is_file():
         edition = "汉化版" if use_chinese else "原版"

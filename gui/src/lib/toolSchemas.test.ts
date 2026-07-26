@@ -40,4 +40,30 @@ describe("web tool parameter schemas", () => {
       flag: "-e",
     });
   });
+
+  it("covers the dirsearch directory brute-force workflow", () => {
+    const schema = getToolSchema("dirsearch");
+    expect(schema.groups.map((group) => group.id)).toEqual([
+      "target",
+      "wordlist",
+      "filter",
+      "request",
+      "crawl",
+      "performance",
+    ]);
+    expect(schema.fields.find((field) => field.id === "url")).toMatchObject({ flag: "-u" });
+    expect(schema.fields.find((field) => field.id === "headers")).toMatchObject({ flag: "-H", repeatable: true });
+  });
+
+  it("covers subfinder enumeration with JSON output", () => {
+    const schema = getToolSchema("subfinder");
+    expect(schema.fields.find((field) => field.id === "domain")).toMatchObject({ flag: "-d" });
+    expect(schema.fields.find((field) => field.id === "json")).toMatchObject({ flag: "-oJ", control: "boolean" });
+  });
+
+  it("covers nuclei templates and structured output", () => {
+    const schema = getToolSchema("nuclei");
+    expect(schema.fields.find((field) => field.id === "severity")).toMatchObject({ flag: "-severity" });
+    expect(schema.fields.find((field) => field.id === "jsonl")).toMatchObject({ flag: "-jsonl", control: "boolean" });
+  });
 });

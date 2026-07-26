@@ -40,7 +40,16 @@ struct SharedToolDefinition {
     id: String,
     #[serde(default)]
     editions: Vec<String>,
-    runner: Option<serde_json::Value>,
+    runner: Option<RunnerConfig>,
+}
+
+/// 运行器分型：python/session 走 ctfbox_launcher.py，binary 直接 spawn 内置可执行文件。
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum RunnerConfig {
+    Python {},
+    Session {},
+    Binary { program: String },
 }
 
 static RUNNER_TOOLS: LazyLock<HashMap<String, SharedToolDefinition>> = LazyLock::new(|| {
@@ -142,7 +151,7 @@ fn python_program(root: &Path) -> PathBuf {
     }
 }
 
-fn build_tool_arguments(request: &ToolRunRequest) -> Result<Vec<String>, String> {
+fn resolve_tool(request: &ToolRunRequest) -> Result<&'static SharedToolDefinition, String> {
     if request.run_id.trim().is_empty() {
         return Err("运行 ID 不能为空".to_string());
     }
@@ -156,12 +165,45 @@ fn build_tool_arguments(request: &ToolRunRequest) -> Result<Vec<String>, String>
     {
         return Err("不支持的工具版本".to_string());
     }
+    Ok(tool)
+}
+
+fn build_tool_arguments(request: &ToolRunRequest) -> Result<Vec<String>, String> {
+    resolve_tool(request)?;
     let mut arguments = vec![request.tool_id.clone()];
     if request.edition == "cn" {
         arguments.push("-cn".to_string());
     }
     arguments.extend(request.arguments.iter().cloned());
     Ok(arguments)
+}
+
+/// 内置二进制名称必须是纯小写字母/数字/连字符，杜绝路径分隔符与相对路径逃逸。
+fn validate_program_name(program: &str) -> Result<(), String> {
+    let mut characters = program.chars();
+    let valid_first = characters
+        .next()
+        .is_some_and(|first| first.is_ascii_lowercase() || first.is_ascii_digit());
+    let valid_rest = characters
+        .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+    if valid_first && valid_rest {
+        Ok(())
+    } else {
+        Err("内置二进制名称非法".to_string())
+    }
+}
+
+/// 只允许解析到固定的 tools/bin/<os>/ 目录，Windows 追加 .exe 后缀。
+fn binary_program_path(root: &Path, program: &str) -> PathBuf {
+    let file_name = if cfg!(windows) {
+        format!("{program}.exe")
+    } else {
+        program.to_string()
+    };
+    root.join("tools")
+        .join("bin")
+        .join(std::env::consts::OS)
+        .join(file_name)
 }
 
 fn decode_utf8_stream(pending: &mut Vec<u8>, bytes: &[u8], eof: bool) -> String {
@@ -335,7 +377,7 @@ fn run_tool(
     request: ToolRunRequest,
     on_event: Channel<ToolStreamEvent>,
 ) -> Result<(), String> {
-    let launcher_arguments = build_tool_arguments(&request)?;
+    let tool = resolve_tool(&request)?;
     {
         let children = manager
             .children
@@ -346,16 +388,32 @@ fn run_tool(
         }
     }
     let root = workspace_root(&app);
-    let launcher = root.join("tools").join("ctfbox_launcher.py");
-    if !launcher.is_file() {
-        return Err(format!("找不到工具启动器：{}", launcher.display()));
-    }
-    let python = python_program(&root);
-    let mut command = Command::new(python);
+    let mut command = if let Some(RunnerConfig::Binary { program }) = &tool.runner {
+        // 原生二进制：白名单校验 + 固定目录 + 直接 spawn（不经 shell，杜绝命令注入）。
+        validate_program_name(program)?;
+        let executable = binary_program_path(&root, program);
+        if !executable.is_file() {
+            return Err(format!("找不到内置二进制：{}", executable.display()));
+        }
+        let mut command = Command::new(executable);
+        command.args(&request.arguments);
+        command
+    } else {
+        // Python / Session：走第一方启动器分发。
+        let launcher_arguments = build_tool_arguments(&request)?;
+        let launcher = root.join("tools").join("ctfbox_launcher.py");
+        if !launcher.is_file() {
+            return Err(format!("找不到工具启动器：{}", launcher.display()));
+        }
+        let python = python_program(&root);
+        let mut command = Command::new(python);
+        command
+            .args(PYTHON_RUNTIME_FLAGS)
+            .arg(launcher)
+            .args(launcher_arguments);
+        command
+    };
     command
-        .args(PYTHON_RUNTIME_FLAGS)
-        .arg(launcher)
-        .args(launcher_arguments)
         .current_dir(&root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -465,12 +523,14 @@ fn stop_tool(manager: State<'_, ProcessManager>, run_id: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::{
-        analysis, analyze_chunk, build_tool_arguments, decode_utf8_stream, ProcessManager,
-        ToolRunRequest, ToolStreamEvent, PYTHON_RUNTIME_FLAGS,
+        analysis, analyze_chunk, binary_program_path, build_tool_arguments, decode_utf8_stream,
+        validate_program_name, ProcessManager, ToolRunRequest, ToolStreamEvent,
+        PYTHON_RUNTIME_FLAGS,
     };
     use crate::analysis::StreamKind;
     use serde_json::json;
     use std::{
+        path::{Path, PathBuf},
         process::{Child, Command, Stdio},
         sync::{Arc, Mutex},
         thread,
@@ -562,7 +622,39 @@ mod tests {
 
     #[test]
     fn runner_registry_matches_the_shared_tool_manifest() {
-        assert_eq!(super::runner_tool_ids(), vec!["sqlmap", "sstimap"]);
+        assert_eq!(
+            super::runner_tool_ids(),
+            vec!["dirsearch", "nuclei", "sqlmap", "sstimap", "subfinder", "webshell"]
+        );
+    }
+
+    #[test]
+    fn accepts_only_whitelisted_binary_program_names() {
+        assert!(validate_program_name("subfinder").is_ok());
+        assert!(validate_program_name("nuclei").is_ok());
+        assert!(validate_program_name("httpx-2").is_ok());
+        // 路径逃逸与非法字符必须被拒绝。
+        assert!(validate_program_name("../evil").is_err());
+        assert!(validate_program_name("sub/finder").is_err());
+        assert!(validate_program_name("Subfinder").is_err());
+        assert!(validate_program_name("-rf").is_err());
+        assert!(validate_program_name("").is_err());
+    }
+
+    #[test]
+    fn resolves_binary_into_the_fixed_platform_directory() {
+        let root = Path::new("/workspace");
+        let resolved = binary_program_path(root, "subfinder");
+        let expected: PathBuf = root
+            .join("tools")
+            .join("bin")
+            .join(std::env::consts::OS)
+            .join(if cfg!(windows) {
+                "subfinder.exe"
+            } else {
+                "subfinder"
+            });
+        assert_eq!(resolved, expected);
     }
 
     #[test]

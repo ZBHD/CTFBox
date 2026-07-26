@@ -56,4 +56,42 @@ describe("command builder", () => {
       "-l", "3", "-e", "jinja2", "-r", "RE",
     ]);
   });
+
+  it("builds a dirsearch command with repeatable headers and extensions", () => {
+    expect(
+      buildCommand("dirsearch", "original", {
+        url: "http://127.0.0.1/",
+        extensions: "php,asp",
+        headers: "X-Forwarded-For: 127.0.0.1\nX-Api: 1",
+        threads: 20,
+        recursive: true,
+      }),
+    ).toEqual([
+      "dirsearch.cmd", "-u", "http://127.0.0.1/", "-e", "php,asp",
+      "-H", "X-Forwarded-For: 127.0.0.1", "-H", "X-Api: 1",
+      "-r", "-t", "20",
+    ]);
+  });
+
+  it("builds a subfinder command with a native program name and JSON output", () => {
+    expect(
+      buildCommand("subfinder", "original", {
+        domain: "example.com",
+        all: true,
+        json: true,
+        threads: 30,
+      }),
+    ).toEqual(["subfinder", "-d", "example.com", "-all", "-oJ", "-t", "30"]);
+  });
+
+  it("builds a nuclei command with severity filter and JSONL output", () => {
+    expect(
+      buildCommand("nuclei", "original", {
+        url: "http://target/",
+        severity: "high,critical",
+        jsonl: true,
+        concurrency: 25,
+      }),
+    ).toEqual(["nuclei", "-u", "http://target/", "-severity", "high,critical", "-jsonl", "-c", "25"]);
+  });
 });

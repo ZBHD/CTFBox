@@ -8,6 +8,7 @@
       "description": "SQL 注入检测与数据枚举",
       "editions": ["original", "cn"],
       "runner": {
+        "kind": "python",
         "launcher": "sqlmap.cmd",
         "sourceDirectory": "sqlmap-1.10",
         "entry": "sqlmap.py"
@@ -20,9 +21,57 @@
       "description": "模板注入检测与利用",
       "editions": ["original", "cn"],
       "runner": {
+        "kind": "python",
         "launcher": "sstimap.cmd",
         "sourceDirectory": "SSTImap-master",
         "entry": "sstimap.py"
+      }
+    },
+    {
+      "id": "dirsearch",
+      "category": "web",
+      "name": "dirsearch",
+      "description": "Web 目录与文件爆破",
+      "editions": ["original"],
+      "runner": {
+        "kind": "python",
+        "launcher": "dirsearch.cmd",
+        "sourceDirectory": "dirsearch",
+        "entry": "dirsearch.py"
+      }
+    },
+    {
+      "id": "subfinder",
+      "category": "web",
+      "name": "subfinder",
+      "description": "被动子域名枚举",
+      "editions": ["original"],
+      "runner": {
+        "kind": "binary",
+        "program": "subfinder"
+      }
+    },
+    {
+      "id": "nuclei",
+      "category": "web",
+      "name": "nuclei",
+      "description": "模板化漏洞扫描",
+      "editions": ["original"],
+      "runner": {
+        "kind": "binary",
+        "program": "nuclei"
+      }
+    },
+    {
+      "id": "webshell",
+      "category": "web",
+      "name": "Webshell 管理",
+      "description": "内置原生 Webshell 连接与文件管理",
+      "editions": ["original"],
+      "runner": {
+        "kind": "session",
+        "sourceDirectory": "webshell",
+        "entry": "webshell.py"
       }
     },
     {

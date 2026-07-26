@@ -37,7 +37,7 @@ export interface ParameterField {
 }
 
 export interface ToolParameterSchema {
-  toolId: "sqlmap" | "sstimap";
+  toolId: "sqlmap" | "sstimap" | "dirsearch" | "subfinder" | "nuclei";
   groups: readonly ParameterGroup[];
   fields: readonly ParameterField[];
 }
@@ -204,6 +204,112 @@ const SSTIMAP_SCHEMA: ToolParameterSchema = {
   ],
 };
 
+const DIRSEARCH_SCHEMA: ToolParameterSchema = {
+  toolId: "dirsearch",
+  groups: [
+    { id: "target", label: "目标", description: "目标 URL 与批量地址" },
+    { id: "wordlist", label: "字典", description: "字典文件与扩展名" },
+    { id: "filter", label: "过滤", description: "按状态码和响应大小筛选" },
+    { id: "request", label: "请求", description: "方法、请求头、Cookie 与代理" },
+    { id: "crawl", label: "递归", description: "目录递归与爬取" },
+    { id: "performance", label: "性能", description: "线程、延迟与超时" },
+  ],
+  fields: [
+    { id: "url", group: "target", label: "目标 URL", flag: "-u", control: "text", placeholder: "http://127.0.0.1/", quick: true },
+    { id: "urlsFile", group: "target", label: "批量 URL 文件", flag: "--urls-file", control: "file" },
+
+    { id: "wordlists", group: "wordlist", label: "字典文件", flag: "-w", control: "text", placeholder: "db/dicc.txt" },
+    { id: "extensions", group: "wordlist", label: "扩展名", flag: "-e", control: "text", placeholder: "php,asp,html", quick: true },
+    { id: "forceExtensions", group: "wordlist", label: "强制附加扩展名", flag: "-f", control: "boolean" },
+
+    { id: "includeStatus", group: "filter", label: "包含状态码", flag: "-i", control: "text", placeholder: "200,301,403" },
+    { id: "excludeStatus", group: "filter", label: "排除状态码", flag: "-x", control: "text", placeholder: "404,500" },
+    { id: "excludeSizes", group: "filter", label: "排除响应大小", flag: "--exclude-sizes", control: "text", placeholder: "0B,123B" },
+
+    { id: "method", group: "request", label: "请求方法", flag: "-m", control: "select", options: selectOptions("GET", "POST", "PUT", "HEAD"), quick: true },
+    { id: "headers", group: "request", label: "附加请求头", flag: "-H", control: "textarea", repeatable: true, placeholder: "X-Forwarded-For: 127.0.0.1" },
+    { id: "cookie", group: "request", label: "Cookie", flag: "--cookie", control: "textarea", placeholder: "session=..." },
+    { id: "proxy", group: "request", label: "代理", flag: "--proxy", control: "text", placeholder: "http://127.0.0.1:8080" },
+
+    { id: "recursive", group: "crawl", label: "递归扫描", flag: "-r", control: "boolean" },
+    { id: "recursionDepth", group: "crawl", label: "递归深度", flag: "-R", control: "number", min: 1 },
+    { id: "deepRecursive", group: "crawl", label: "深度递归", flag: "--deep-recursive", control: "boolean" },
+
+    { id: "threads", group: "performance", label: "并发线程", flag: "-t", control: "number", min: 1, quick: true },
+    { id: "delay", group: "performance", label: "请求间隔（秒）", flag: "--delay", control: "number", min: 0 },
+    { id: "timeout", group: "performance", label: "超时（秒）", flag: "--timeout", control: "number", min: 1 },
+  ],
+};
+
+const SUBFINDER_SCHEMA: ToolParameterSchema = {
+  toolId: "subfinder",
+  groups: [
+    { id: "target", label: "目标", description: "单个域名或批量域名文件" },
+    { id: "sources", label: "数据源", description: "启用全部源、指定或排除源" },
+    { id: "output", label: "输出", description: "结构化 JSON 输出" },
+    { id: "performance", label: "性能", description: "并发、超时与速率" },
+    { id: "config", label: "配置", description: "配置文件与 provider key" },
+  ],
+  fields: [
+    { id: "domain", group: "target", label: "目标域名", flag: "-d", control: "text", placeholder: "example.com", quick: true },
+    { id: "domainList", group: "target", label: "域名列表文件", flag: "-dL", control: "file" },
+
+    { id: "all", group: "sources", label: "启用全部源", flag: "-all", control: "boolean", quick: true },
+    { id: "sources", group: "sources", label: "指定数据源", flag: "-s", control: "text", placeholder: "crtsh,dnsdumpster" },
+    { id: "excludeSources", group: "sources", label: "排除数据源", flag: "-es", control: "text" },
+    { id: "recursive", group: "sources", label: "递归枚举", flag: "-recursive", control: "boolean" },
+
+    { id: "json", group: "output", label: "JSON 行输出", flag: "-oJ", control: "boolean", quick: true, description: "建议开启以稳定解析发现结果" },
+    { id: "silent", group: "output", label: "仅输出子域", flag: "-silent", control: "boolean" },
+
+    { id: "threads", group: "performance", label: "并发数", flag: "-t", control: "number", min: 1 },
+    { id: "timeout", group: "performance", label: "超时（秒）", flag: "-timeout", control: "number", min: 1 },
+    { id: "rateLimit", group: "performance", label: "速率限制", flag: "-rl", control: "number", min: 0 },
+
+    { id: "config", group: "config", label: "配置文件", flag: "-config", control: "file" },
+    { id: "providerConfig", group: "config", label: "Provider 配置", flag: "-pc", control: "file", description: "provider-config.yaml，含 API key" },
+  ],
+};
+
+const NUCLEI_SCHEMA: ToolParameterSchema = {
+  toolId: "nuclei",
+  groups: [
+    { id: "target", label: "目标", description: "单个 URL 或目标列表" },
+    { id: "templates", label: "模板", description: "模板路径、标签与严重级别" },
+    { id: "request", label: "请求", description: "请求头、代理与超时" },
+    { id: "output", label: "输出", description: "结构化 JSONL 输出" },
+    { id: "performance", label: "性能", description: "并发、速率与批量" },
+  ],
+  fields: [
+    { id: "url", group: "target", label: "目标 URL", flag: "-u", control: "text", placeholder: "http://target/", quick: true },
+    { id: "list", group: "target", label: "目标列表文件", flag: "-l", control: "file" },
+
+    { id: "templates", group: "templates", label: "模板路径", flag: "-t", control: "text", placeholder: "cves/ 或本地模板目录", quick: true },
+    { id: "tags", group: "templates", label: "标签", flag: "-tags", control: "text", placeholder: "cve,rce" },
+    { id: "severity", group: "templates", label: "严重级别", flag: "-severity", control: "text", placeholder: "medium,high,critical", quick: true },
+    { id: "excludeTags", group: "templates", label: "排除标签", flag: "-etags", control: "text" },
+
+    { id: "headers", group: "request", label: "附加请求头", flag: "-H", control: "textarea", repeatable: true, placeholder: "Authorization: Bearer ..." },
+    { id: "proxy", group: "request", label: "代理", flag: "-proxy", control: "text", placeholder: "http://127.0.0.1:8080" },
+    { id: "timeout", group: "request", label: "超时（秒）", flag: "-timeout", control: "number", min: 1 },
+
+    { id: "jsonl", group: "output", label: "JSONL 输出", flag: "-jsonl", control: "boolean", quick: true, description: "建议开启以稳定解析命中" },
+    { id: "silent", group: "output", label: "静默模式", flag: "-silent", control: "boolean" },
+
+    { id: "concurrency", group: "performance", label: "并发模板数", flag: "-c", control: "number", min: 1 },
+    { id: "rateLimit", group: "performance", label: "速率限制", flag: "-rl", control: "number", min: 0 },
+    { id: "bulkSize", group: "performance", label: "批量主机数", flag: "-bulk-size", control: "number", min: 1 },
+  ],
+};
+
+const SCHEMAS: Record<string, ToolParameterSchema> = {
+  sqlmap: SQLMAP_SCHEMA,
+  sstimap: SSTIMAP_SCHEMA,
+  dirsearch: DIRSEARCH_SCHEMA,
+  subfinder: SUBFINDER_SCHEMA,
+  nuclei: NUCLEI_SCHEMA,
+};
+
 export function getToolSchema(toolId: string): ToolParameterSchema {
-  return toolId === "sstimap" ? SSTIMAP_SCHEMA : SQLMAP_SCHEMA;
+  return SCHEMAS[toolId] ?? SQLMAP_SCHEMA;
 }

@@ -15,8 +15,14 @@ class LauncherPathTests(unittest.TestCase):
     def test_loads_runnable_tools_from_the_shared_registry(self):
         loaded = load_tool_registry(ROOT / "tools" / "tool_registry.json")
 
-        self.assertEqual(loaded["sqlmap"], ("sqlmap-1.10", "sqlmap.py"))
-        self.assertEqual(loaded["sstimap"], ("SSTImap-master", "sstimap.py"))
+        # kind 为 "python" 的工具走版本目录分发。
+        self.assertEqual(loaded["sqlmap"], ("python", "sqlmap-1.10", "sqlmap.py"))
+        self.assertEqual(loaded["sstimap"], ("python", "SSTImap-master", "sstimap.py"))
+        # 会话型工具（webshell）位于 tools/clients，无版本分支。
+        self.assertEqual(loaded["webshell"], ("session", "webshell", "webshell.py"))
+        # 二进制工具（subfinder/nuclei）由 Rust 直接 spawn，不进入启动器映射。
+        self.assertNotIn("subfinder", loaded)
+        self.assertNotIn("nuclei", loaded)
         self.assertEqual(TOOLS, loaded)
 
 

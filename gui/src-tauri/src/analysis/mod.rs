@@ -1,7 +1,10 @@
 use serde::Serialize;
 
+pub mod dirsearch;
+pub mod nuclei;
 pub mod sqlmap;
 pub mod sstimap;
+pub mod subfinder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamKind {
@@ -30,6 +33,9 @@ pub fn analyzer_for(tool_id: &str, arguments: &[String]) -> Option<Box<dyn ToolO
     match tool_id {
         "sqlmap" => Some(Box::new(sqlmap::SqlmapAnalyzer::new(arguments))),
         "sstimap" => Some(Box::new(sstimap::SstimapAnalyzer::default())),
+        "dirsearch" => Some(Box::new(dirsearch::DirsearchAnalyzer::default())),
+        "subfinder" => Some(Box::new(subfinder::SubfinderAnalyzer::default())),
+        "nuclei" => Some(Box::new(nuclei::NucleiAnalyzer::default())),
         _ => None,
     }
 }
@@ -117,6 +123,11 @@ mod tests {
     fn registry_returns_only_supported_analyzers() {
         assert!(analyzer_for("sqlmap", &[]).is_some());
         assert!(analyzer_for("sstimap", &[]).is_some());
+        assert!(analyzer_for("dirsearch", &[]).is_some());
+        assert!(analyzer_for("subfinder", &[]).is_some());
+        assert!(analyzer_for("nuclei", &[]).is_some());
+        // webshell 使用会话协议，不走行解析器。
+        assert!(analyzer_for("webshell", &[]).is_none());
         assert!(analyzer_for("crypto", &[]).is_none());
     }
 }

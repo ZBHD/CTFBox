@@ -8,6 +8,7 @@ import { ToolRail, type ToolSelection } from "./components/ToolRail";
 import { UpdateReadyDialog } from "./components/UpdateReadyDialog";
 import { CryptoWorkbench } from "./components/processing/CryptoWorkbench";
 import { MiscWorkbench } from "./components/processing/MiscWorkbench";
+import { WebshellWorkbench } from "./components/processing/WebshellWorkbench";
 import { CommandTerminal } from "./components/workbench/CommandTerminal";
 import { AutomationControls, type AutomationPhase } from "./components/workbench/AutomationControls";
 import { ModeControls } from "./components/workbench/ModeControls";
@@ -322,7 +323,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const task = tasks[key] ?? createTask(selection.toolId);
   const automation = automations[key] ?? IDLE_AUTOMATION;
   const plugin = getPlugin(selection.toolId) ?? getPlugin("sqlmap")!;
-  const isWebTool = plugin.category === "web" && plugin.runner !== undefined;
+  const isWebshell = plugin.category === "web" && plugin.runner?.kind === "session";
+  const isWebTool = plugin.category === "web" && plugin.runner !== undefined && !isWebshell;
   const command = useMemo(
     () => isWebTool ? buildCommand(selection.toolId, task.edition, task.parameters as ToolParameters) : [],
     [isWebTool, selection.toolId, task.edition, task.parameters],
@@ -602,7 +604,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
             onStart={startAutomation}
             onStop={stopAutomation}
           />}
-          {isWebTool ? <div className="web-workspace-grid">
+          {isWebshell ? <WebshellWorkbench /> :
+            isWebTool ? <div className="web-workspace-grid">
             <div className="web-output-stack">
               <CommandTerminal runs={task.runs} commandPreview={command.join(" ")} onToggleRun={toggleRun} flagHits={flagHits} runningRunId={task.runs.find((run) => run.status === "running")?.id} onSendInput={(input) => { const run = task.runs.find((item) => item.status === "running"); if (run) sendToolInput(run.id, input); }} />
               <ResultsPanel findings={task.findings} suggestions={suggestions} running={task.status === "running"} onApplySuggestion={applyAndRunSuggestion} flagEnabled={flagSettings.enabled} flagPrefixes={prefixes} flagHits={flagHits} />
@@ -611,7 +614,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
           </div> : selection.toolId === "crypto" ?
             <CryptoWorkbench mode={selection.mode ?? "encoding"} parameters={task.parameters as ToolParameters} flagPrefixes={prefixes} flagCaseSensitive={flagSettings.caseSensitive} flagEnabled={flagSettings.enabled} onChange={updateParameter} onClear={() => updateCurrentTask(clearTask)} /> :
             <MiscWorkbench mode={selection.mode ?? "image"} parameters={task.parameters as ToolParameters} analysis={task.localAnalysis} flagPrefixes={prefixes} flagCaseSensitive={flagSettings.caseSensitive} flagEnabled={flagSettings.enabled} onChange={updateParameter} onAnalysisChange={updateLocalAnalysis} onClear={() => updateCurrentTask(clearTask)} />}
-          {!isWebTool && <FlagHitStrip hits={flagHits} />}
+          {!isWebTool && !isWebshell && <FlagHitStrip hits={flagHits} />}
           <footer className="statusbar">
             <span className={health ? "status-dot status-dot-ok" : "status-dot"} />
             <span>{health ? `${health.app} ${health.version} · ${health.platform}` : healthError ? "浏览器预览模式" : "正在连接后端"}</span>

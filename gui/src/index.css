@@ -299,6 +299,33 @@ label.icon-action input { position: absolute; width: 1px; height: 1px; opacity: 
 .local-status { min-height: 27px; display: flex; align-items: center; padding: 0 15px; border-top: 1px solid var(--border); color: #586873; background: #090e12; font-size: 8px; }
 .local-status-error { color: var(--danger); }
 
+.webshell-connect { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: #0d1419; }
+.webshell-target { flex: 1 1 320px; }
+.webshell-target input { width: 100%; }
+.webshell-connect select { height: 31px; padding: 0 22px 0 8px; border: 1px solid #2a3740; border-radius: 3px; color: #bdc9d1; background: #090f13; font: 9px "Cascadia Mono", Consolas, monospace; cursor: pointer; }
+.webshell-serverinfo { display: flex; flex-wrap: wrap; gap: 18px; padding: 8px 16px; border-bottom: 1px solid var(--border-soft); background: #0b1116; color: #64727d; font-size: 9px; }
+.webshell-serverinfo strong { color: #8ad6b6; font-weight: 500; }
+.webshell-tabs { display: flex; gap: 4px; padding: 8px 14px 0; }
+.webshell-tabs button { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 3px 3px 0 0; color: #697884; background: #0d1419; font-size: 9px; cursor: pointer; }
+.webshell-tabs button.active { color: #bbebd9; background: #14211b; }
+.webshell-terminal, .webshell-files { min-height: 0; flex: 1; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.webshell-terminal-log { min-height: 0; flex: 1; padding: 10px 14px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.webshell-terminal-log article { border: 1px solid #26343d; border-radius: 3px; background: #0e151a; }
+.webshell-terminal-log header { padding: 5px 9px; border-bottom: 1px solid #202b33; color: #75dcb6; font: 9px "Cascadia Mono", Consolas, monospace; }
+.webshell-terminal-log pre { margin: 0; padding: 8px 9px; overflow: auto; color: #aab7bf; font: 9px/1.55 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.webshell-terminal-input { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); background: #0d1419; }
+.webshell-terminal-input input { flex: 1; height: 31px; padding: 0 9px; border: 1px solid #2a3740; border-radius: 3px; color: #cad5dc; background: #090f13; font: 9px "Cascadia Mono", Consolas, monospace; }
+.webshell-files-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border-soft); background: #0d1419; }
+.webshell-files-bar input { flex: 1; height: 31px; padding: 0 9px; border: 1px solid #2a3740; border-radius: 3px; color: #cad5dc; background: #090f13; font: 9px "Cascadia Mono", Consolas, monospace; }
+.webshell-entry-list { min-height: 0; flex: 1; margin: 0; padding: 6px 10px; list-style: none; overflow: auto; }
+.webshell-entry-list li { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 6px; border-bottom: 1px solid #172127; }
+.webshell-entry-name { flex: 1; text-align: left; border: 0; color: #b5c1c9; background: transparent; font: 9px "Cascadia Mono", Consolas, monospace; cursor: pointer; }
+.webshell-entry-list li > span { flex: 0 0 auto; color: #586772; font-size: 8px; }
+.webshell-file-view { max-height: 220px; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.webshell-file-view header { padding: 6px 12px; border-bottom: 1px solid var(--border-soft); background: #11191f; color: #8e9da7; font: 8px "Cascadia Mono", Consolas, monospace; }
+.webshell-file-view pre { margin: 0; padding: 10px 12px; overflow: auto; color: #aab7bf; font: 9px/1.55 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.webshell-empty { padding: 22px; color: #52616b; font-size: 9px; text-align: center; }
+
 .misc-workspace-grid { min-height: 0; flex: 1; display: grid; grid-template: "asset inspector" minmax(0,1fr) "results results" 185px / minmax(0,1.45fr) minmax(330px,.7fr); }
 .asset-stage { grid-area: asset; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
 .analysis-inspector { grid-area: inspector; min-width: 0; min-height: 0; display: flex; flex-direction: column; }

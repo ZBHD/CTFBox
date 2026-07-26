@@ -11,18 +11,25 @@ import type { LsbCandidate, LsbImageSource } from "./lsbTypes";
 class FakeWorker implements LsbWorkerLike {
   messages: Array<{ message: LsbWorkerRequest; transfer?: Transferable[] }> = [];
   listeners = new Set<(event: MessageEvent<LsbWorkerResponse>) => void>();
+  errorListeners = new Set<(event: ErrorEvent) => void>();
   terminated = false;
 
   postMessage(message: LsbWorkerRequest, transfer?: Transferable[]) {
     this.messages.push({ message, transfer });
   }
 
-  addEventListener(_: "message", listener: (event: MessageEvent<LsbWorkerResponse>) => void) {
-    this.listeners.add(listener);
+  addEventListener(type: "message", listener: (event: MessageEvent<LsbWorkerResponse>) => void): void;
+  addEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
+  addEventListener(type: "message" | "error", listener: ((event: MessageEvent<LsbWorkerResponse>) => void) | ((event: ErrorEvent) => void)) {
+    if (type === "message") this.listeners.add(listener as (event: MessageEvent<LsbWorkerResponse>) => void);
+    else this.errorListeners.add(listener as (event: ErrorEvent) => void);
   }
 
-  removeEventListener(_: "message", listener: (event: MessageEvent<LsbWorkerResponse>) => void) {
-    this.listeners.delete(listener);
+  removeEventListener(type: "message", listener: (event: MessageEvent<LsbWorkerResponse>) => void): void;
+  removeEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
+  removeEventListener(type: "message" | "error", listener: ((event: MessageEvent<LsbWorkerResponse>) => void) | ((event: ErrorEvent) => void)) {
+    if (type === "message") this.listeners.delete(listener as (event: MessageEvent<LsbWorkerResponse>) => void);
+    else this.errorListeners.delete(listener as (event: ErrorEvent) => void);
   }
 
   terminate() {
@@ -31,6 +38,10 @@ class FakeWorker implements LsbWorkerLike {
 
   emit(data: LsbWorkerResponse) {
     for (const listener of this.listeners) listener({ data } as MessageEvent<LsbWorkerResponse>);
+  }
+
+  emitError(message: string) {
+    for (const listener of this.errorListeners) listener({ message } as ErrorEvent);
   }
 }
 
@@ -94,7 +105,7 @@ describe("LSB worker client", () => {
 
     client.cancel();
     expect(worker.messages.at(-1)?.message).toEqual({ type: "cancel", jobId });
-    worker.emit({ type: "cancelled", jobId });
+    expect(worker.listeners.size).toBe(0);
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 
@@ -118,5 +129,23 @@ describe("LSB worker client", () => {
     client.dispose();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(worker.terminated).toBe(true);
+  });
+
+  it("rejects a crashed worker and recreates it for the next analysis", async () => {
+    const first = new FakeWorker();
+    const second = new FakeWorker();
+    const workers = [first, second];
+    const client = new LsbWorkerClient(() => workers.shift()!);
+    const pending = client.auto(source, { depth: "quick", prefixes: [], caseSensitive: false });
+
+    expect(first.errorListeners.size).toBe(1);
+    first.emitError("worker crashed");
+    await expect(pending).rejects.toThrow("worker crashed");
+    expect(first.terminated).toBe(true);
+
+    const retry = client.auto(source, { depth: "quick", prefixes: [], caseSensitive: false });
+    const jobId = second.messages[0].message.jobId;
+    second.emit({ type: "complete", jobId, candidates: [] });
+    await expect(retry).resolves.toEqual([]);
   });
 });

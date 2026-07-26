@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{ipc::Channel, AppHandle, Manager, State};
@@ -27,6 +27,40 @@ struct ToolRunRequest {
     tool_id: String,
     edition: String,
     arguments: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SharedToolRegistry {
+    version: u32,
+    tools: Vec<SharedToolDefinition>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SharedToolDefinition {
+    id: String,
+    #[serde(default)]
+    editions: Vec<String>,
+    runner: Option<serde_json::Value>,
+}
+
+static RUNNER_TOOLS: LazyLock<HashMap<String, SharedToolDefinition>> = LazyLock::new(|| {
+    let registry: SharedToolRegistry =
+        serde_json::from_str(include_str!("../../../tools/tool_registry.json"))
+            .expect("共享工具注册表格式无效");
+    assert_eq!(registry.version, 1, "不支持的共享工具注册表版本");
+    registry
+        .tools
+        .into_iter()
+        .filter(|tool| tool.runner.is_some())
+        .map(|tool| (tool.id.clone(), tool))
+        .collect()
+});
+
+#[cfg(test)]
+fn runner_tool_ids() -> Vec<&'static str> {
+    let mut ids = RUNNER_TOOLS.keys().map(String::as_str).collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
 }
 
 #[derive(Serialize, Clone)]
@@ -54,9 +88,29 @@ enum ToolStreamEvent {
 type SharedAnalyzer = Arc<Mutex<Box<dyn analysis::ToolOutputAnalyzer>>>;
 
 #[derive(Clone, Default)]
-struct ProcessManager {
+pub(crate) struct ProcessManager {
     children: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
     stop_requested: Arc<Mutex<HashSet<String>>>,
+}
+
+impl ProcessManager {
+    pub(crate) fn terminate_all(&self) -> usize {
+        let children = self
+            .children
+            .lock()
+            .map(|mut children| children.drain().collect::<Vec<_>>())
+            .unwrap_or_default();
+        if let Ok(mut stopped) = self.stop_requested.lock() {
+            stopped.extend(children.iter().map(|(run_id, _)| run_id.clone()));
+        }
+        for (_, child) in &children {
+            if let Ok(mut process) = child.lock() {
+                let _ = process.kill();
+                let _ = process.wait();
+            }
+        }
+        children.len()
+    }
 }
 
 fn workspace_root(app: &AppHandle) -> PathBuf {
@@ -92,10 +146,14 @@ fn build_tool_arguments(request: &ToolRunRequest) -> Result<Vec<String>, String>
     if request.run_id.trim().is_empty() {
         return Err("运行 ID 不能为空".to_string());
     }
-    if request.tool_id != "sqlmap" && request.tool_id != "sstimap" {
-        return Err("不支持的工具".to_string());
-    }
-    if request.edition != "original" && request.edition != "cn" {
+    let tool = RUNNER_TOOLS
+        .get(&request.tool_id)
+        .ok_or_else(|| "不支持的工具".to_string())?;
+    if !tool
+        .editions
+        .iter()
+        .any(|edition| edition == &request.edition)
+    {
         return Err("不支持的工具版本".to_string());
     }
     let mut arguments = vec![request.tool_id.clone()];
@@ -407,16 +465,75 @@ fn stop_tool(manager: State<'_, ProcessManager>, run_id: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::{
-        analysis, analyze_chunk, build_tool_arguments, decode_utf8_stream, ToolRunRequest,
-        ToolStreamEvent, PYTHON_RUNTIME_FLAGS,
+        analysis, analyze_chunk, build_tool_arguments, decode_utf8_stream, ProcessManager,
+        ToolRunRequest, ToolStreamEvent, PYTHON_RUNTIME_FLAGS,
     };
     use crate::analysis::StreamKind;
     use serde_json::json;
-    use std::sync::{Arc, Mutex};
+    use std::{
+        process::{Child, Command, Stdio},
+        sync::{Arc, Mutex},
+        thread,
+        time::Duration,
+    };
+
+    #[cfg(windows)]
+    fn sleeping_child() -> Child {
+        use std::os::windows::process::CommandExt;
+        Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ])
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    #[cfg(not(windows))]
+    fn sleeping_child() -> Child {
+        Command::new("sh")
+            .args(["-c", "sleep 30"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
 
     #[test]
     fn disables_python_bytecode_for_bundled_tools() {
         assert_eq!(PYTHON_RUNTIME_FLAGS, ["-B", "-u"]);
+    }
+
+    #[test]
+    fn terminates_every_managed_child_before_application_exit() {
+        let manager = ProcessManager::default();
+        let child = Arc::new(Mutex::new(sleeping_child()));
+        manager
+            .children
+            .lock()
+            .unwrap()
+            .insert("run-exit".into(), child.clone());
+
+        assert_eq!(manager.terminate_all(), 1);
+        assert!(manager.children.lock().unwrap().is_empty());
+        assert!(manager.stop_requested.lock().unwrap().contains("run-exit"));
+
+        let mut exited = false;
+        for _ in 0..20 {
+            if child.lock().unwrap().try_wait().unwrap().is_some() {
+                exited = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert!(exited, "managed child did not exit after termination");
     }
 
     #[test]
@@ -441,6 +558,11 @@ mod tests {
             build_tool_arguments(&chinese).unwrap(),
             vec!["sstimap", "-cn", "-u", "TARGET"]
         );
+    }
+
+    #[test]
+    fn runner_registry_matches_the_shared_tool_manifest() {
+        assert_eq!(super::runner_tool_ids(), vec!["sqlmap", "sstimap"]);
     }
 
     #[test]
@@ -529,7 +651,7 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let setup_updater = setup_updater::SetupUpdater::new().expect("初始化应用更新客户端失败");
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
@@ -545,6 +667,14 @@ pub fn run() {
             setup_updater::install_setup_update,
             setup_updater::discard_setup_update
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("CTFBox 启动失败");
+    app.run(|app_handle, event| {
+        if matches!(
+            event,
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+        ) {
+            app_handle.state::<ProcessManager>().terminate_all();
+        }
+    });
 }

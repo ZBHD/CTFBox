@@ -1,5 +1,6 @@
 import type { StructuredFinding } from "../state/taskStore";
 import type { ToolParameters } from "./commandBuilder";
+import { stableIdPart } from "./stableIdentifier";
 
 export interface TaskSuggestion {
   id: string;
@@ -45,10 +46,6 @@ function uniqueFindingValues(
 function selectedOrOnly(selected: string, candidates: string[]) {
   if (selected) return selected;
   return candidates.length === 1 ? candidates[0] : "";
-}
-
-function idPart(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-|-$/g, "");
 }
 
 export function applySuggestionPatch(
@@ -109,7 +106,7 @@ function buildSqlmapSuggestions(
   if (!table) {
     if (tables.length > 1) return [];
     return [{
-      id: `sqlmap-enumerate-tables-${idPart(database)}`,
+      id: `sqlmap-enumerate-tables-${stableIdPart(database)}`,
       label: `枚举 ${database} 的数据表`,
       patch: { database, tables: true },
     }];
@@ -120,14 +117,14 @@ function buildSqlmapSuggestions(
   if (!column) {
     if (columns.length > 1) return [];
     return [{
-      id: `sqlmap-enumerate-columns-${idPart(database)}-${idPart(table)}`,
+      id: `sqlmap-enumerate-columns-${stableIdPart(database)}-${stableIdPart(table)}`,
       label: `枚举 ${database}.${table} 的字段`,
       patch: { database, table, columns: true },
     }];
   }
 
   return [{
-    id: `sqlmap-dump-${idPart(database)}-${idPart(table)}-${idPart(column)}`,
+    id: `sqlmap-dump-${stableIdPart(database)}-${stableIdPart(table)}-${stableIdPart(column)}`,
     label: `导出 ${database}.${table}.${column}`,
     patch: { database, table, column, dump: true },
   }];
@@ -147,7 +144,7 @@ function buildSstimapSuggestions(
     return [];
   }
   return [{
-    id: `sstimap-retest-${idPart(engine)}-${idPart(technique)}`,
+    id: `sstimap-retest-${stableIdPart(engine)}-${stableIdPart(technique)}`,
     label: `使用 ${engine} / ${technique} 精准复测`,
     patch: { engine, technique },
   }];

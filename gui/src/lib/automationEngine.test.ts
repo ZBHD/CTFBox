@@ -37,4 +37,18 @@ describe("web tool automation planner", () => {
     expect(jobs.slice(1).some((job) => String(job.parameters.osCommand).includes("flag\\{"))).toBe(true);
     expect(jobs.slice(1).every((job) => !("upload" in job.parameters) && !("reverseShell" in job.parameters))).toBe(true);
   });
+
+  it("keeps jobs for distinct non-ASCII database and table names unique", () => {
+    const jobs = buildAutomationJobs("sqlmap", { url: "TARGET_URL" }, [
+      { kind: "database", value: "业务库" },
+      { kind: "database", value: "审计库" },
+      { kind: "table", value: "用户表", database: "业务库" },
+      { kind: "table", value: "日志表", database: "业务库" },
+    ], ["flag"]);
+
+    const ids = jobs.map((job) => job.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => id.startsWith("sqlmap-tables-"))).toHaveLength(2);
+    expect(ids.filter((id) => id.startsWith("sqlmap-dump-"))).toHaveLength(2);
+  });
 });

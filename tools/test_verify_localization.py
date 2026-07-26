@@ -135,6 +135,19 @@ class VerifyOriginalTests(unittest.TestCase):
         removed = self.verify()
         self.assertTrue(any("删除 1 个" in failure for failure in removed.failures))
 
+    def test_known_upstream_ignored_package_markers_are_allowed_only_when_empty(self):
+        self.baseline.write_text("", encoding="utf-8")
+        marker = self.original / "SSTImap-master" / "data_types" / "__init__.py"
+        marker.parent.mkdir(parents=True)
+        marker.write_bytes(b"")
+
+        allowed = self.verify()
+        self.assertFalse(any("意外新增" in failure for failure in allowed.failures))
+
+        marker.write_text("changed = True\n", encoding="utf-8")
+        changed = self.verify()
+        self.assertTrue(any("意外新增 1 个" in failure for failure in changed.failures))
+
 
 if __name__ == "__main__":
     unittest.main()

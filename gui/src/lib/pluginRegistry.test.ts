@@ -15,6 +15,11 @@ describe("tool plugin registry", () => {
     expect(getPlugin("sqlmap")).toMatchObject({
       category: "web",
       editions: ["original", "cn"],
+      runner: {
+        launcher: "sqlmap.cmd",
+        sourceDirectory: "sqlmap-1.10",
+        entry: "sqlmap.py",
+      },
     });
   });
 });

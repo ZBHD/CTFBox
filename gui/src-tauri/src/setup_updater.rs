@@ -1,9 +1,14 @@
+use crate::ProcessManager;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     path::Path,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -47,11 +52,18 @@ impl SetupUpdate {
 struct SetupUpdateSession {
     checked: Option<CheckedSetupUpdate>,
     downloaded: Option<std::path::PathBuf>,
+    active_download: Option<ActiveSetupDownload>,
 }
 
 struct CheckedSetupUpdate {
     id: u64,
     update: SetupUpdate,
+}
+
+struct ActiveSetupDownload {
+    id: u64,
+    version: String,
+    cancelled: Arc<AtomicBool>,
 }
 
 pub(crate) struct SetupUpdater {
@@ -89,6 +101,12 @@ pub(crate) enum SetupDownloadEvent {
 }
 
 impl SetupUpdateSession {
+    fn cancel_active_download(&mut self) {
+        if let Some(active) = self.active_download.take() {
+            active.cancelled.store(true, Ordering::Release);
+        }
+    }
+
     fn checked_update_for_session(
         &self,
         update_id: u64,
@@ -108,8 +126,54 @@ impl SetupUpdateSession {
         &mut self,
         checked: Option<(u64, SetupUpdate)>,
     ) -> Option<std::path::PathBuf> {
+        self.cancel_active_download();
         self.checked = checked.map(|(id, update)| CheckedSetupUpdate { id, update });
         self.downloaded.take()
+    }
+
+    fn begin_download(
+        &mut self,
+        update_id: u64,
+        version: &str,
+    ) -> Result<(SetupUpdate, Option<std::path::PathBuf>, Arc<AtomicBool>), String> {
+        let update = self.checked_update_for_session(update_id, version)?.clone();
+        if self.active_download.is_some() {
+            return Err("更新下载已经在进行中".into());
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        self.active_download = Some(ActiveSetupDownload {
+            id: update_id,
+            version: version.to_string(),
+            cancelled: cancelled.clone(),
+        });
+        Ok((update, self.downloaded.take(), cancelled))
+    }
+
+    fn finish_download(
+        &mut self,
+        update_id: u64,
+        version: &str,
+        path: std::path::PathBuf,
+    ) -> Result<(), String> {
+        let matches = self
+            .active_download
+            .as_ref()
+            .is_some_and(|active| active.id == update_id && active.version == version);
+        if !matches {
+            return Err("更新下载会话已过期".into());
+        }
+        self.active_download = None;
+        self.remember_downloaded(update_id, version, path)
+    }
+
+    fn abort_download(&mut self, update_id: u64, version: &str) {
+        let matches = self
+            .active_download
+            .as_ref()
+            .is_some_and(|active| active.id == update_id && active.version == version);
+        if matches {
+            self.cancel_active_download();
+        }
     }
 
     fn remember_downloaded(
@@ -136,6 +200,7 @@ impl SetupUpdateSession {
         version: &str,
     ) -> Result<Option<std::path::PathBuf>, String> {
         self.checked_update_for_session(update_id, version)?;
+        self.cancel_active_download();
         self.checked = None;
         Ok(self.downloaded.take())
     }
@@ -243,9 +308,18 @@ fn installer_arguments() -> [&'static str; 3] {
 }
 
 fn build_http_client() -> Result<reqwest::Client, String> {
+    build_http_client_with_timeouts(Duration::from_secs(10), Duration::from_secs(30))
+}
+
+fn build_http_client_with_timeouts(
+    connect_timeout: Duration,
+    read_timeout: Duration,
+) -> Result<reqwest::Client, String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .user_agent(format!("CTFBox/{}", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(connect_timeout)
+        .read_timeout(read_timeout)
         .build()
         .map_err(|error| format!("创建更新请求客户端失败：{error}"))
 }
@@ -300,15 +374,20 @@ async fn verify_setup_file(path: &Path, update: &SetupUpdate) -> Result<(), Stri
     Ok(())
 }
 
-async fn download_setup_to_path<F>(
+async fn download_setup_to_path<C, F>(
     client: &reqwest::Client,
     update: &SetupUpdate,
     destination: &Path,
+    is_cancelled: C,
     mut on_progress: F,
 ) -> Result<(), String>
 where
+    C: Fn() -> bool,
     F: FnMut(u64, Option<u64>),
 {
+    if is_cancelled() {
+        return Err("Setup 下载已取消".into());
+    }
     let parent = destination
         .parent()
         .ok_or_else(|| "Setup 下载目录无效".to_string())?;
@@ -320,6 +399,9 @@ where
     let _ = tokio::fs::remove_file(destination).await;
 
     let download = async {
+        if is_cancelled() {
+            return Err("Setup 下载已取消".into());
+        }
         let mut response = client
             .get(&update.download_url)
             .send()
@@ -346,6 +428,9 @@ where
             .await
             .map_err(|error| format!("读取 Setup 下载数据失败：{error}"))?
         {
+            if is_cancelled() {
+                return Err("Setup 下载已取消".into());
+            }
             downloaded = downloaded
                 .checked_add(chunk.len() as u64)
                 .ok_or_else(|| "Setup 文件大小溢出".to_string())?;
@@ -378,6 +463,9 @@ where
         let actual_digest = format!("{:x}", hasher.finalize());
         if actual_digest != update.digest {
             return Err("Setup SHA-256 校验失败，文件可能已损坏或被篡改".into());
+        }
+        if is_cancelled() {
+            return Err("Setup 下载已取消".into());
         }
 
         tokio::fs::rename(&temporary, destination)
@@ -435,26 +523,58 @@ pub(crate) async fn download_setup_update(
         .map_err(|error| format!("确定更新目录失败：{error}"))?
         .join("updates");
     let destination = update_directory.join(canonical_setup_name(&version));
-    let mut session = updater.session.lock().await;
-    let update = session
-        .checked_update_for_session(update_id, &version)?
-        .clone();
-    if let Some(stale_setup) = session.downloaded.take() {
+    let (update, stale_setup, cancelled) = updater
+        .session
+        .lock()
+        .await
+        .begin_download(update_id, &version)?;
+    if let Some(stale_setup) = stale_setup {
         let _ = tokio::fs::remove_file(stale_setup).await;
     }
 
-    on_event
+    if let Err(error) = on_event
         .send(SetupDownloadEvent::Started {
             content_length: Some(update.size),
         })
-        .map_err(|error| format!("发送更新下载状态失败：{error}"))?;
-    download_setup_to_path(&updater.client, &update, &destination, |chunk, _total| {
-        let _ = on_event.send(SetupDownloadEvent::Progress {
-            chunk_length: chunk as usize,
-        });
-    })
-    .await?;
-    session.remember_downloaded(update_id, &version, destination)?;
+        .map_err(|error| format!("发送更新下载状态失败：{error}"))
+    {
+        updater
+            .session
+            .lock()
+            .await
+            .abort_download(update_id, &version);
+        return Err(error);
+    }
+    let download = download_setup_to_path(
+        &updater.client,
+        &update,
+        &destination,
+        || cancelled.load(Ordering::Acquire),
+        |chunk, _total| {
+            let _ = on_event.send(SetupDownloadEvent::Progress {
+                chunk_length: chunk as usize,
+            });
+        },
+    )
+    .await;
+    if let Err(error) = download {
+        updater
+            .session
+            .lock()
+            .await
+            .abort_download(update_id, &version);
+        return Err(error);
+    }
+    if let Err(error) =
+        updater
+            .session
+            .lock()
+            .await
+            .finish_download(update_id, &version, destination.clone())
+    {
+        let _ = tokio::fs::remove_file(destination).await;
+        return Err(error);
+    }
     on_event
         .send(SetupDownloadEvent::Finished)
         .map_err(|error| format!("发送更新完成状态失败：{error}"))
@@ -481,16 +601,29 @@ fn launch_setup(_path: &Path) -> Result<(), String> {
 #[tauri::command]
 pub(crate) async fn install_setup_update(
     updater: State<'_, SetupUpdater>,
+    manager: State<'_, ProcessManager>,
     update_id: u64,
     version: String,
 ) -> Result<(), String> {
-    let session = updater.session.lock().await;
-    let update = session
-        .checked_update_for_session(update_id, &version)?
-        .clone();
-    let setup_path = session.downloaded_setup(update_id, &version)?.to_path_buf();
+    let (update, setup_path) = {
+        let session = updater.session.lock().await;
+        (
+            session
+                .checked_update_for_session(update_id, &version)?
+                .clone(),
+            session.downloaded_setup(update_id, &version)?.to_path_buf(),
+        )
+    };
     verify_setup_file(&setup_path, &update).await?;
+    {
+        let session = updater.session.lock().await;
+        session.checked_update_for_session(update_id, &version)?;
+        if session.downloaded_setup(update_id, &version)?.to_path_buf() != setup_path {
+            return Err("已下载的 Setup 会话已变化，请重新下载".into());
+        }
+    }
     launch_setup(&setup_path)?;
+    manager.terminate_all();
     std::process::exit(0);
 }
 
@@ -518,15 +651,16 @@ mod tests {
         net::TcpListener,
         path::PathBuf,
         thread,
+        time::{Duration, Instant},
     };
 
     use sha2::{Digest, Sha256};
     use tempfile::tempdir;
 
     use super::{
-        build_http_client, download_setup_to_path, fetch_setup_update_from_url,
-        installer_arguments, parse_release_json, sha256_matches, verify_setup_file, SetupUpdate,
-        SetupUpdateSession,
+        build_http_client, build_http_client_with_timeouts, download_setup_to_path,
+        fetch_setup_update_from_url, installer_arguments, parse_release_json, sha256_matches,
+        verify_setup_file, SetupUpdate, SetupUpdateSession,
     };
 
     fn release_json(version: &str, assets: &str) -> String {
@@ -570,6 +704,24 @@ mod tests {
             stream.write_all(&body).unwrap();
         });
         format!("http://{address}/setup.exe")
+    }
+
+    fn serve_stalled_response(delay: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: 64\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+            stream.flush().unwrap();
+            thread::sleep(delay);
+        });
+        format!("http://{address}/release")
     }
 
     fn downloadable_update(url: String, body: &[u8], digest: String) -> SetupUpdate {
@@ -766,6 +918,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn cancels_an_active_download_when_the_checked_session_is_replaced() {
+        let update = downloadable_update(
+            "https://example.invalid/setup.exe".into(),
+            b"setup",
+            "ab".repeat(32),
+        );
+        let mut session = SetupUpdateSession::default();
+        session.replace_checked_session(Some((17, update.clone())));
+
+        let (_started, _stale, cancelled) = session.begin_download(17, "0.1.3").unwrap();
+        assert!(session.begin_download(17, "0.1.3").is_err());
+        session.replace_checked_session(Some((18, update)));
+
+        assert!(cancelled.load(std::sync::atomic::Ordering::Acquire));
+        assert!(session
+            .finish_download(
+                17,
+                "0.1.3",
+                PathBuf::from("CTFBox-0.1.3-windows-x64-setup.exe"),
+            )
+            .is_err());
+    }
+
     #[tokio::test]
     async fn fetches_and_parses_the_latest_release_response() {
         let digest = format!("sha256:{}", "ab".repeat(32));
@@ -781,6 +957,25 @@ mod tests {
         .unwrap();
 
         assert_eq!(update.version, "0.1.3");
+    }
+
+    #[tokio::test]
+    async fn times_out_when_a_release_response_stalls() {
+        let client =
+            build_http_client_with_timeouts(Duration::from_millis(50), Duration::from_millis(50))
+                .unwrap();
+        let started = Instant::now();
+
+        let error = fetch_setup_update_from_url(
+            &client,
+            &serve_stalled_response(Duration::from_millis(250)),
+            "0.1.2",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("GitHub Release"));
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[tokio::test]
@@ -812,6 +1007,7 @@ mod tests {
             &build_http_client().unwrap(),
             &update,
             &destination,
+            || false,
             |chunk, total| {
                 downloaded += chunk;
                 totals.push(total);
@@ -840,6 +1036,7 @@ mod tests {
             &build_http_client().unwrap(),
             &update,
             &destination,
+            || false,
             |_chunk, _total| {},
         )
         .await
@@ -863,12 +1060,36 @@ mod tests {
             &build_http_client().unwrap(),
             &update,
             &destination,
+            || false,
             |_chunk, _total| {},
         )
         .await
         .unwrap_err();
 
         assert!(error.contains("大小"));
+        assert!(!destination.exists());
+        assert!(!destination.with_extension("exe.download").exists());
+    }
+
+    #[tokio::test]
+    async fn cancels_a_download_before_network_or_file_work() {
+        let body = b"setup bytes";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let update = downloadable_update("http://127.0.0.1:1/setup.exe".into(), body, digest);
+        let directory = tempdir().unwrap();
+        let destination = directory.path().join("CTFBox-0.1.3-windows-x64-setup.exe");
+
+        let error = download_setup_to_path(
+            &build_http_client().unwrap(),
+            &update,
+            &destination,
+            || true,
+            |_chunk, _total| {},
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("取消"));
         assert!(!destination.exists());
         assert!(!destination.with_extension("exe.download").exists());
     }

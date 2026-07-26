@@ -134,7 +134,7 @@ textarea:-webkit-autofill:focus {
 .terminal-run-heading { width: 100%; min-height: 32px; display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 5px; padding: 5px 8px; border: 0; color: #7d8d98; background: #111920; text-align: left; cursor: pointer; }
 .terminal-run-heading code { overflow: hidden; color: #b7c4cd; font: 9px/1.4 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .terminal-run pre { margin: 0; padding: 10px 11px; overflow: auto; color: #8fa0aa; font: 9px/1.65 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; }
-.terminal-output-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.terminal-truncation { color: #d6a84d; }
 .run-status { padding: 2px 5px; border: 1px solid #35434d; border-radius: 2px; color: #778691; font: 8px "Segoe UI", sans-serif; }
 .run-status-running { border-color: #806326; color: var(--amber); }
 .run-status-completed { border-color: #275844; color: #64caa5; }

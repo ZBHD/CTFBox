@@ -7,10 +7,16 @@ export interface CommandRun {
   argv: string[];
   status: TaskStatus;
   output: string;
+  outputCharsReceived?: number;
+  outputTruncated?: boolean;
   collapsed: boolean;
   automationJobId?: string;
   automationLabel?: string;
 }
+
+export const MAX_RUN_OUTPUT_CHARS = 1024 * 1024;
+export const MAX_TASK_OUTPUT_CHARS = 4 * MAX_RUN_OUTPUT_CHARS;
+export const MAX_TASK_RUNS = 256;
 
 export interface StructuredFinding {
   kind: string;
@@ -55,20 +61,60 @@ export function createTask(toolId: string): TaskState {
 }
 
 export function appendRun(state: TaskState, run: CommandRun): TaskState {
-  return { ...state, runs: [...state.runs, { ...run }], status: "running" };
+  return {
+    ...state,
+    runs: boundRunHistory([
+      ...state.runs,
+      { ...run, outputCharsReceived: run.outputCharsReceived ?? run.output.length },
+    ]),
+    status: "running",
+  };
+}
+
+function boundRunHistory(runs: CommandRun[]) {
+  let overflow = runs.length - MAX_TASK_RUNS;
+  if (overflow <= 0) return runs;
+  return runs.filter((run) => {
+    if (overflow <= 0 || run.status === "running") return true;
+    overflow -= 1;
+    return false;
+  });
 }
 
 export function appendOutput(state: TaskState, runId: string, chunk: string): TaskState {
+  let runs = state.runs.map((run) => {
+    if (run.id !== runId) return run;
+    const combined = run.output + chunk;
+    return combined.length > MAX_RUN_OUTPUT_CHARS
+      ? {
+          ...run,
+          output: combined.slice(-MAX_RUN_OUTPUT_CHARS),
+          outputCharsReceived: (run.outputCharsReceived ?? run.output.length) + chunk.length,
+          outputTruncated: true,
+        }
+      : {
+          ...run,
+          output: combined,
+          outputCharsReceived: (run.outputCharsReceived ?? run.output.length) + chunk.length,
+        };
+  });
+  let overflow = runs.reduce((total, run) => total + run.output.length, 0) - MAX_TASK_OUTPUT_CHARS;
+  if (overflow > 0) {
+    runs = runs.map((run) => {
+      if (overflow <= 0 || run.output.length === 0) return run;
+      const removed = Math.min(overflow, run.output.length);
+      overflow -= removed;
+      return { ...run, output: run.output.slice(removed), outputTruncated: true };
+    });
+  }
   return {
     ...state,
-    runs: state.runs.map((run) =>
-      run.id === runId ? { ...run, output: run.output + chunk } : run,
-    ),
+    runs,
   };
 }
 
 export function finishRun(state: TaskState, runId: string, status: "completed" | "failed" | "stopped"): TaskState {
-  const runs = state.runs.map((run) => run.id === runId ? { ...run, status } : run);
+  const runs = boundRunHistory(state.runs.map((run) => run.id === runId ? { ...run, status } : run));
   const taskStatus = runs.some((run) => run.status === "running")
     ? "running"
     : runs.some((run) => run.status === "failed")

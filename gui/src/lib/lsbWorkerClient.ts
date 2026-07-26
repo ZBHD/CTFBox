@@ -20,7 +20,9 @@ export type LsbWorkerResponse =
 export interface LsbWorkerLike {
   postMessage(message: LsbWorkerRequest, transfer?: Transferable[]): void;
   addEventListener(type: "message", listener: (event: MessageEvent<LsbWorkerResponse>) => void): void;
+  addEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
   removeEventListener(type: "message", listener: (event: MessageEvent<LsbWorkerResponse>) => void): void;
+  removeEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
   terminate(): void;
 }
 
@@ -34,6 +36,7 @@ interface SearchOptions {
 interface ActiveJob {
   jobId: number;
   listener: (event: MessageEvent<LsbWorkerResponse>) => void;
+  errorListener: (event: ErrorEvent) => void;
   reject: (error: Error) => void;
 }
 
@@ -55,7 +58,8 @@ function cloneSource(source: LsbImageSource) {
 }
 
 export class LsbWorkerClient {
-  private readonly worker: LsbWorkerLike;
+  private worker: LsbWorkerLike;
+  private readonly factory: () => LsbWorkerLike;
   private active?: ActiveJob;
   private nextJobId = 1;
   private disposed = false;
@@ -64,13 +68,15 @@ export class LsbWorkerClient {
     new URL("../workers/lsbWorker.ts", import.meta.url),
     { type: "module" },
   ) as unknown as LsbWorkerLike) {
-    this.worker = factory();
+    this.factory = factory;
+    this.worker = this.factory();
   }
 
   private replaceActive() {
     if (!this.active) return;
     this.worker.postMessage({ type: "cancel", jobId: this.active.jobId });
     this.worker.removeEventListener("message", this.active.listener);
+    this.worker.removeEventListener("error", this.active.errorListener);
     this.active.reject(abortError());
     this.active = undefined;
   }
@@ -89,7 +95,15 @@ export class LsbWorkerClient {
     return new Promise<T>((resolve, reject) => {
       const settle = () => {
         this.worker.removeEventListener("message", listener);
+        this.worker.removeEventListener("error", errorListener);
         if (this.active?.jobId === jobId) this.active = undefined;
+      };
+      const errorListener = (event: ErrorEvent) => {
+        settle();
+        const failedWorker = this.worker;
+        failedWorker.terminate();
+        if (!this.disposed) this.worker = this.factory();
+        reject(new Error(`LSB Worker 异常：${event.message || "未知错误"}`));
       };
       const listener = (event: MessageEvent<LsbWorkerResponse>) => {
         const response = event.data;
@@ -113,8 +127,9 @@ export class LsbWorkerClient {
         settle();
         resolve(value);
       };
-      this.active = { jobId, listener, reject };
+      this.active = { jobId, listener, errorListener, reject };
       this.worker.addEventListener("message", listener);
+      this.worker.addEventListener("error", errorListener);
       const transfer = [cloned.rgba.buffer];
       if (cloned.paletteIndices) transfer.push(cloned.paletteIndices.buffer);
       this.worker.postMessage(buildRequest(jobId, cloned), transfer as Transferable[]);
@@ -146,7 +161,7 @@ export class LsbWorkerClient {
   }
 
   cancel() {
-    if (this.active) this.worker.postMessage({ type: "cancel", jobId: this.active.jobId });
+    this.replaceActive();
   }
 
   dispose() {
@@ -154,6 +169,7 @@ export class LsbWorkerClient {
     this.disposed = true;
     if (this.active) {
       this.worker.removeEventListener("message", this.active.listener);
+      this.worker.removeEventListener("error", this.active.errorListener);
       this.active.reject(abortError());
       this.active = undefined;
     }

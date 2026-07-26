@@ -20,6 +20,12 @@ ALLOWED_ORIGINAL_ADDITIONS = {
     "sqlmap-1.10/使用说明.md",
     "SSTImap-master/使用说明.md",
 }
+ALLOWED_EMPTY_IGNORED_ORIGINAL_ADDITIONS = {
+    "SSTImap-master/data_types/__init__.py",
+    "SSTImap-master/data_types/custom/__init__.py",
+    "SSTImap-master/plugins/__init__.py",
+    "SSTImap-master/plugins/custom/__init__.py",
+}
 PLACEHOLDER_RE = re.compile(
     r"%(?:\([A-Za-z_][A-Za-z0-9_]*\))?[#0 +\-]?(?:\d+|\*)?(?:\.\d+)?[diouxXeEfFgGcrsa%]"
     r"|\{(?:[A-Za-z_][A-Za-z0-9_]*|\d+)(?:![rsa])?(?::[^{}]+)?\}"
@@ -88,7 +94,14 @@ def verify_original(results: CheckResults) -> None:
     changed = sorted(path for path, digest in baseline.items() if current.get(path) != digest)
     removed = sorted(set(baseline) - set(current))
     additions = set(current) - set(baseline)
-    unexpected = sorted(additions - ALLOWED_ORIGINAL_ADDITIONS)
+    allowed_empty_ignored = {
+        relative
+        for relative in additions & ALLOWED_EMPTY_IGNORED_ORIGINAL_ADDITIONS
+        if (ORIGINAL / relative).stat().st_size == 0
+    }
+    unexpected = sorted(
+        additions - ALLOWED_ORIGINAL_ADDITIONS - allowed_empty_ignored
+    )
     results.check(not changed, f"原版基线文件未变化（变化 {len(changed)} 个）")
     results.check(not removed, f"原版基线文件未删除（删除 {len(removed)} 个）")
     results.check(not unexpected, f"原版仅新增获准说明文件（意外新增 {len(unexpected)} 个）")

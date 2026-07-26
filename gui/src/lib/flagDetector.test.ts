@@ -27,4 +27,9 @@ describe("global flag detector", () => {
       { text: "NSSCTF{complete_prefix}", source: "plain" },
     ]);
   });
+
+  it("ignores oversized Base64-like tokens before decoding", () => {
+    const oversized = `ZmxhZ3tvdmVyc2l6ZWR9${"A".repeat(4096)}`;
+    expect(detectFlags(oversized, ["flag"], false)).toEqual([]);
+  });
 });

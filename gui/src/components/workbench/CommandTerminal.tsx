@@ -99,8 +99,10 @@ export function CommandTerminal({
                   {STATUS_LABEL[run.status]}
                 </span>
               </button>
-              {!run.collapsed && <pre>{run.output ? highlightOutput(run.output, flagHits) : "等待回显..."}</pre>}
-              {run.collapsed && <span className="terminal-output-cache">{run.output}</span>}
+              {!run.collapsed && <pre>
+                {run.outputTruncated && <span className="terminal-truncation">[较早回显已裁剪]\n</span>}
+                {run.output ? highlightOutput(run.output, flagHits) : run.outputTruncated ? null : "等待回显..."}
+              </pre>}
             </article>
           ))
         )}

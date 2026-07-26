@@ -4,6 +4,8 @@ export interface FlagHit {
   encoded?: string;
 }
 
+export const MAX_BASE64_TOKEN_CHARS = 4096;
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -40,7 +42,11 @@ export function detectFlags(
     source: "plain" as const,
   }));
 
-  const base64Tokens = text.match(/(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{8,}={0,2}(?![A-Za-z0-9+/_=-])/g) ?? [];
+  const base64Pattern = new RegExp(
+    `(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{8,${MAX_BASE64_TOKEN_CHARS}}={0,2}(?![A-Za-z0-9+/_=-])`,
+    "g",
+  );
+  const base64Tokens = text.match(base64Pattern) ?? [];
   for (const encoded of base64Tokens) {
     const decoded = decodeBase64(encoded);
     if (!decoded) continue;

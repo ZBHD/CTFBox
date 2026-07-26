@@ -39,13 +39,31 @@ describe("CommandTerminal", () => {
 
   it("keeps previous commands and output when a later command is rendered", () => {
     const html = renderToStaticMarkup(
-      <CommandTerminal runs={runs} commandPreview="sqlmap.py -D main --tables" />,
+      <CommandTerminal runs={runs.map((run) => ({ ...run, collapsed: false }))} commandPreview="sqlmap.py -D main --tables" />,
     );
 
     expect(html).toContain("available databases: main");
     expect(html).toContain("fetching tables");
     expect(html).toContain("run-1");
     expect(html).toContain("run-2");
+  });
+
+  it("does not mount a collapsed run's output in hidden DOM", () => {
+    const html = renderToStaticMarkup(
+      <CommandTerminal runs={[runs[0]]} commandPreview="sqlmap.py" />,
+    );
+
+    expect(html).not.toContain("available databases: main");
+    expect(html).not.toContain("terminal-output-cache");
+  });
+
+  it("shows that earlier output was truncated", () => {
+    const html = renderToStaticMarkup(
+      <CommandTerminal runs={[{ ...runs[1], outputTruncated: true }]} commandPreview="sqlmap.py" />,
+    );
+
+    expect(html).toContain("较早回显已裁剪");
+    expect(html).toContain("fetching tables");
   });
 
   it("highlights plain flags and their Base64 source token in terminal output", () => {

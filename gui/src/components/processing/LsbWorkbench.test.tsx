@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { act, create } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_LSB_PARAMETERS } from "../../lib/lsbEngine";
 import type { LsbLocalAnalysis } from "../../lib/lsbTypes";
 import { LsbWorkbench } from "./LsbWorkbench";
@@ -55,5 +55,21 @@ describe("LsbWorkbench", () => {
     expect(root.findAllByProps({ className: "lsb-token-label" }).map((node) => node.children.join(""))).toEqual(["R0", "G0", "R4", "B0"]);
     act(() => root.findAllByProps({ title: "删除数据源" }).at(-1)?.props.onClick());
     expect(root.findAllByProps({ className: "lsb-token-label" }).map((node) => node.children.join(""))).toEqual(["R0", "G0", "R4"]);
+  });
+
+  it("rejects an oversized image before reading it into memory", () => {
+    const onChange = vi.fn();
+    const arrayBuffer = vi.fn();
+    const renderer = create(
+      <LsbWorkbench analysis={analysis()} flagPrefixes={["flag"]} flagCaseSensitive={false} flagEnabled onAnalysisChange={onChange} onClear={() => undefined} />,
+    );
+
+    const fileInput = renderer.root.findAllByType("input").find((node) => node.props.type === "file");
+    act(() => fileInput?.props.onChange({
+      target: { files: [{ name: "huge.png", size: 65 * 1024 * 1024, type: "image/png", arrayBuffer }] },
+    }));
+
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", error: expect.stringContaining("64 MiB") }));
   });
 });

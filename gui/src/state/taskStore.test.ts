@@ -7,6 +7,9 @@ import {
   createTask,
   applyToolStreamEvent,
   updateTaskContainingRun,
+  MAX_RUN_OUTPUT_CHARS,
+  MAX_TASK_OUTPUT_CHARS,
+  MAX_TASK_RUNS,
   type CommandRun,
   type TaskState,
   type ToolStreamEvent,
@@ -27,6 +30,47 @@ describe("in-memory task state", () => {
 
     expect(second.runs.map((item) => item.id)).toEqual(["run-1", "run-2"]);
     expect(second.runs[0].output).toBe("first\n");
+  });
+
+  it("bounds individual and aggregate output while preserving truncation state", () => {
+    const oversized = "x".repeat(MAX_RUN_OUTPUT_CHARS + 100);
+    const first = appendOutput(appendRun(createTask("sqlmap"), run), run.id, oversized);
+
+    expect(first.runs[0].output.length).toBeLessThanOrEqual(MAX_RUN_OUTPUT_CHARS);
+    expect(first.runs[0].outputTruncated).toBe(true);
+
+    let task = first;
+    for (let index = 2; index <= 8; index += 1) {
+      const id = `run-${index}`;
+      task = appendRun(task, { ...run, id });
+      task = appendOutput(task, id, "y".repeat(MAX_RUN_OUTPUT_CHARS));
+    }
+    expect(task.runs.reduce((total, item) => total + item.output.length, 0)).toBeLessThanOrEqual(MAX_TASK_OUTPUT_CHARS);
+    expect(task.runs.slice(0, -1).some((item) => item.outputTruncated)).toBe(true);
+  });
+
+  it("tracks total received output after the retained buffer is truncated", () => {
+    const task = appendOutput(
+      appendRun(createTask("sqlmap"), { ...run, output: "started\n" }),
+      run.id,
+      "x".repeat(MAX_RUN_OUTPUT_CHARS + 10),
+    );
+
+    expect(task.runs[0].output).toHaveLength(MAX_RUN_OUTPUT_CHARS);
+    expect(task.runs[0].outputCharsReceived).toBe("started\n".length + MAX_RUN_OUTPUT_CHARS + 10);
+  });
+
+  it("bounds completed command history while retaining active runs", () => {
+    let task = createTask("sqlmap");
+    for (let index = 0; index < MAX_TASK_RUNS + 20; index += 1) {
+      const id = `history-${index}`;
+      task = finishRun(appendRun(task, { ...run, id }), id, "completed");
+    }
+    task = appendRun(task, { ...run, id: "active-run" });
+
+    expect(task.runs).toHaveLength(MAX_TASK_RUNS);
+    expect(task.runs[0].id).toBe("history-21");
+    expect(task.runs.at(-1)?.id).toBe("active-run");
   });
 
   it("clears parameters, runs, findings, and suggestions", () => {

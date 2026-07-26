@@ -9,6 +9,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useState } from "react";
+import { listPlugins } from "../lib/pluginRegistry";
 
 export interface ToolSelection {
   toolId: string;
@@ -50,6 +51,7 @@ export function ToolRail({
 }: ToolRailProps) {
   const [openMenu, setOpenMenu] = useState<"crypto" | "misc" | null>(null);
   const hasAvailableUpdate = availableUpdateVersion !== undefined;
+  const webTools = listPlugins("web");
 
   const renderPicker = (
     id: "crypto" | "misc",
@@ -123,22 +125,18 @@ export function ToolRail({
       </div>
       <nav aria-label="工具导航">
         <span className="nav-label">WEB 工具</span>
-        <button
-          className={`tool-entry ${selection.toolId === "sqlmap" && !settingsOpen ? "tool-entry-active" : ""}`}
-          type="button"
-          onClick={() => onSelect({ toolId: "sqlmap" })}
-        >
-          <Database size={16} />
-          <span><strong>SQLmap</strong><small>SQL 注入</small></span>
-        </button>
-        <button
-          className={`tool-entry ${selection.toolId === "sstimap" && !settingsOpen ? "tool-entry-active" : ""}`}
-          type="button"
-          onClick={() => onSelect({ toolId: "sstimap" })}
-        >
-          <Code2 size={16} />
-          <span><strong>SSTImap</strong><small>模板注入</small></span>
-        </button>
+        {webTools.map((tool, index) => {
+          const Icon = index === 0 ? Database : Code2;
+          return <button
+            className={`tool-entry ${selection.toolId === tool.id && !settingsOpen ? "tool-entry-active" : ""}`}
+            key={tool.id}
+            type="button"
+            onClick={() => onSelect({ toolId: tool.id })}
+          >
+            <Icon size={16} />
+            <span><strong>{tool.name}</strong><small>{tool.description}</small></span>
+          </button>;
+        })}
 
         <span className="nav-label nav-label-spaced">工具箱</span>
         {renderPicker("crypto", "Crypto", CRYPTO_TOOLS, Binary)}

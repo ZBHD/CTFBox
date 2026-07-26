@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import os
 import runpy
 import sys
@@ -19,15 +20,33 @@ def normalize_windows_path(path: Path) -> Path:
 
 
 ROOT = normalize_windows_path(Path(__file__).resolve()).parents[1]
-TOOLS = {
-    "sqlmap": ("sqlmap-1.10", "sqlmap.py"),
-    "sstimap": ("SSTImap-master", "sstimap.py"),
-}
+
+
+def load_tool_registry(path: Path) -> dict[str, tuple[str, str]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("version") != 1 or not isinstance(payload.get("tools"), list):
+        raise ValueError("工具注册表格式无效")
+    tools: dict[str, tuple[str, str]] = {}
+    for item in payload["tools"]:
+        if not isinstance(item, dict) or not isinstance(item.get("runner"), dict):
+            continue
+        tool_id = item.get("id")
+        directory = item["runner"].get("sourceDirectory")
+        entry = item["runner"].get("entry")
+        if not all(isinstance(value, str) and value for value in (tool_id, directory, entry)):
+            raise ValueError("工具运行器配置无效")
+        tools[tool_id.lower()] = (directory, entry)
+    if not tools:
+        raise ValueError("工具注册表没有可运行工具")
+    return tools
+
+
+TOOLS = load_tool_registry(ROOT / "tools" / "tool_registry.json")
 
 
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1].lower() not in TOOLS:
-        print("用法：ctfbox_launcher.py <sqlmap|sstimap> [-cn] [工具参数...]", file=sys.stderr)
+        print(f"用法：ctfbox_launcher.py <{'|'.join(TOOLS)}> [-cn] [工具参数...]", file=sys.stderr)
         return 2
 
     tool = sys.argv[1].lower()

@@ -14,13 +14,16 @@ export type StegoWorkerResponse =
 export interface StegoWorkerLike {
   postMessage(message: StegoWorkerRequest, transfer?: Transferable[]): void;
   addEventListener(type: "message", listener: (event: MessageEvent<StegoWorkerResponse>) => void): void;
+  addEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
   removeEventListener(type: "message", listener: (event: MessageEvent<StegoWorkerResponse>) => void): void;
+  removeEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
   terminate(): void;
 }
 
 interface ActiveJob {
   jobId: number;
   listener: (event: MessageEvent<StegoWorkerResponse>) => void;
+  errorListener: (event: ErrorEvent) => void;
   reject: (error: Error) => void;
 }
 
@@ -40,7 +43,8 @@ function cloneInput(input: StegoAnalysisInput): StegoAnalysisInput {
 }
 
 export class StegoWorkerClient {
-  private readonly worker: StegoWorkerLike;
+  private worker: StegoWorkerLike;
+  private readonly factory: () => StegoWorkerLike;
   private active?: ActiveJob;
   private nextJobId = 1;
   private disposed = false;
@@ -49,13 +53,15 @@ export class StegoWorkerClient {
     new URL("../workers/stegoWorker.ts", import.meta.url),
     { type: "module" },
   ) as unknown as StegoWorkerLike) {
-    this.worker = factory();
+    this.factory = factory;
+    this.worker = this.factory();
   }
 
   private replaceActive() {
     if (!this.active) return;
     this.worker.postMessage({ type: "cancel", jobId: this.active.jobId });
     this.worker.removeEventListener("message", this.active.listener);
+    this.worker.removeEventListener("error", this.active.errorListener);
     this.active.reject(abortError());
     this.active = undefined;
   }
@@ -68,7 +74,15 @@ export class StegoWorkerClient {
     return new Promise<StegoReport>((resolve, reject) => {
       const settle = () => {
         this.worker.removeEventListener("message", listener);
+        this.worker.removeEventListener("error", errorListener);
         if (this.active?.jobId === jobId) this.active = undefined;
+      };
+      const errorListener = (event: ErrorEvent) => {
+        settle();
+        const failedWorker = this.worker;
+        failedWorker.terminate();
+        if (!this.disposed) this.worker = this.factory();
+        reject(new Error(`隐写分析 Worker 异常：${event.message || "未知错误"}`));
       };
       const listener = (event: MessageEvent<StegoWorkerResponse>) => {
         const response = event.data;
@@ -82,8 +96,9 @@ export class StegoWorkerClient {
         else if (response.type === "cancelled") reject(abortError());
         else if (response.type === "error") reject(new Error(response.message));
       };
-      this.active = { jobId, listener, reject };
+      this.active = { jobId, listener, errorListener, reject };
       this.worker.addEventListener("message", listener);
+      this.worker.addEventListener("error", errorListener);
       const transfer: Transferable[] = [cloned.bytes.buffer as ArrayBuffer];
       if (cloned.pixels) transfer.push(cloned.pixels.rgba.buffer as ArrayBuffer);
       this.worker.postMessage({ type: "analyze", jobId, input: cloned, options: { ...options } }, transfer);
@@ -91,7 +106,7 @@ export class StegoWorkerClient {
   }
 
   cancel() {
-    if (this.active) this.worker.postMessage({ type: "cancel", jobId: this.active.jobId });
+    this.replaceActive();
   }
 
   dispose() {
@@ -99,6 +114,7 @@ export class StegoWorkerClient {
     this.disposed = true;
     if (this.active) {
       this.worker.removeEventListener("message", this.active.listener);
+      this.worker.removeEventListener("error", this.active.errorListener);
       this.active.reject(abortError());
       this.active = undefined;
     }

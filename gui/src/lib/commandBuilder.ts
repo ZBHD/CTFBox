@@ -1,4 +1,4 @@
-import type { PluginEdition } from "./pluginRegistry";
+import { getPlugin, type PluginEdition } from "./pluginRegistry";
 import { getToolSchema } from "./toolSchemas";
 
 export type ParameterValue = string | boolean | number | undefined;
@@ -9,11 +9,12 @@ export function buildCommand(
   edition: PluginEdition,
   parameters: ToolParameters,
 ): string[] {
-  const executable = toolId === "sqlmap" ? "sqlmap.cmd" : toolId === "sstimap" ? "sstimap.cmd" : `${toolId}.cmd`;
+  const plugin = getPlugin(toolId);
+  const executable = plugin?.runner?.launcher ?? `${toolId}.cmd`;
   const argv = [executable];
-  if (edition === "cn" && (toolId === "sqlmap" || toolId === "sstimap")) argv.push("-cn");
+  if (edition === "cn" && plugin?.editions?.includes("cn")) argv.push("-cn");
 
-  if (toolId === "sqlmap" || toolId === "sstimap") {
+  if (plugin?.category === "web" && plugin.runner) {
     for (const field of getToolSchema(toolId).fields) {
       const value = parameters[field.id];
       if (field.control === "boolean") {

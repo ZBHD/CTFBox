@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "id": "sqlmap",
+      "category": "web",
+      "name": "SQLmap",
+      "description": "SQL 注入检测与数据枚举",
+      "editions": ["original", "cn"],
+      "runner": {
+        "launcher": "sqlmap.cmd",
+        "sourceDirectory": "sqlmap-1.10",
+        "entry": "sqlmap.py"
+      }
+    },
+    {
+      "id": "sstimap",
+      "category": "web",
+      "name": "SSTImap",
+      "description": "模板注入检测与利用",
+      "editions": ["original", "cn"],
+      "runner": {
+        "launcher": "sstimap.cmd",
+        "sourceDirectory": "SSTImap-master",
+        "entry": "sstimap.py"
+      }
+    },
+    {
+      "id": "crypto",
+      "category": "crypto",
+      "name": "Crypto",
+      "description": "离线密码学与编码工具"
+    },
+    {
+      "id": "misc",
+      "category": "misc",
+      "name": "Misc",
+      "description": "文件、隐写和综合分析工具"
+    }
+  ]
+}

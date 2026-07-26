@@ -1,6 +1,7 @@
 import type { StructuredFinding } from "../state/taskStore";
 import { applySuggestionPatch } from "./suggestionEngine";
 import type { ToolParameters } from "./commandBuilder";
+import { stableIdPart } from "./stableIdentifier";
 
 export interface AutomationJob {
   id: string;
@@ -14,10 +15,6 @@ function values(findings: StructuredFinding[], kind: string, context: { database
     .filter((finding) => !context.database || finding.database === context.database)
     .map((finding) => finding.value.trim())
     .filter(Boolean)));
-}
-
-function idPart(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function sqlParameters(base: ToolParameters, patch: ToolParameters): ToolParameters {
@@ -42,7 +39,7 @@ function buildSqlmapJobs(parameters: ToolParameters, findings: StructuredFinding
   const selectedDatabase = String(parameters.database ?? "").trim();
   for (const database of selectedDatabase ? [selectedDatabase] : databases) {
     jobs.push({
-      id: `sqlmap-tables-${idPart(database)}`,
+      id: `sqlmap-tables-${stableIdPart(database)}`,
       label: `枚举 ${database} 的数据表`,
       parameters: sqlParameters(parameters, { database, tables: true }),
     });
@@ -58,7 +55,7 @@ function buildSqlmapJobs(parameters: ToolParameters, findings: StructuredFinding
     .sort((left, right) => tablePriority(left.value) - tablePriority(right.value) || left.value.localeCompare(right.value));
   for (const { database, value: table } of uniqueTables) {
     jobs.push({
-      id: `sqlmap-dump-${idPart(database)}-${idPart(table)}`,
+      id: `sqlmap-dump-${stableIdPart(database)}-${stableIdPart(table)}`,
       label: `导出 ${database}.${table}`,
       parameters: sqlParameters(parameters, { database, table, dump: true }),
     });

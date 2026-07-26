@@ -7,10 +7,26 @@ interface ThemeStorage {
   setItem(key: string, value: string): void;
 }
 
-export function loadTheme(storage: ThemeStorage | undefined = typeof localStorage === "undefined" ? undefined : localStorage): Theme {
-  return storage?.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+function defaultStorage(): ThemeStorage | undefined {
+  try {
+    return typeof localStorage === "undefined" ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
 }
 
-export function saveTheme(theme: Theme, storage: ThemeStorage | undefined = typeof localStorage === "undefined" ? undefined : localStorage) {
-  storage?.setItem(THEME_STORAGE_KEY, theme);
+export function loadTheme(storage: ThemeStorage | undefined = defaultStorage()): Theme {
+  try {
+    return storage?.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+export function saveTheme(theme: Theme, storage: ThemeStorage | undefined = defaultStorage()) {
+  try {
+    storage?.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Keep the selected in-memory theme when browser storage is unavailable.
+  }
 }

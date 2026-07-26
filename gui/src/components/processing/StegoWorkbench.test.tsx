@@ -29,4 +29,17 @@ describe("StegoWorkbench", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ metadata: false }) }));
     expect(current.options.metadata).toBe(true);
   });
+
+  it("rejects an oversized file before reading it into memory", () => {
+    const onChange = vi.fn();
+    const arrayBuffer = vi.fn();
+    const renderer = create(<StegoWorkbench analysis={analysis()} flagPrefixes={["flag"]} flagCaseSensitive={false} flagEnabled onAnalysisChange={onChange} onClear={() => undefined} />);
+
+    act(() => renderer.root.findByProps({ "aria-label": "选择隐写分析文件" }).props.onChange({
+      target: { files: [{ name: "huge.bin", size: 129 * 1024 * 1024, type: "application/octet-stream", arrayBuffer }] },
+    }));
+
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", error: expect.stringContaining("128 MiB") }));
+  });
 });

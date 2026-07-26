@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { openUrl as tauriOpenUrl } from "@tauri-apps/plugin-opener";
 import { relaunch as tauriRelaunch } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SettingsPanel, type FlagSettings, type SettingsSection } from "./components/SettingsPanel";
+import { SettingsPanel, type SettingsSection } from "./components/SettingsPanel";
 import { FlagHitStrip } from "./components/FlagHitStrip";
 import { ToolRail, type ToolSelection } from "./components/ToolRail";
 import { UpdateReadyDialog } from "./components/UpdateReadyDialog";
@@ -14,15 +14,20 @@ import { ModeControls } from "./components/workbench/ModeControls";
 import { ParameterPanel } from "./components/workbench/ParameterPanel";
 import { ResultsPanel } from "./components/workbench/ResultsPanel";
 import { buildCommand, type ToolParameters } from "./lib/commandBuilder";
-import { detectFlags } from "./lib/flagDetector";
 import {
-  DEFAULT_FLAG_PREFIX_PREFERENCE,
   loadFlagPrefixPreference,
   saveFlagPrefixPreference,
 } from "./lib/flagPrefixPreference";
+import {
+  loadFlagSettingsPreference,
+  saveFlagSettingsPreference,
+  type FlagSettings,
+} from "./lib/flagSettingsPreference";
 import type { LocalAnalysisState } from "./lib/lsbTypes";
 import { getPlugin } from "./lib/pluginRegistry";
 import { createToolRunRequest } from "./lib/runnerProtocol";
+import { StreamEventBatcher } from "./lib/streamEventBatcher";
+import { TaskFlagScanner } from "./lib/taskFlagScanner";
 import { applySuggestionPatch, buildTaskSuggestions, type TaskSuggestion } from "./lib/suggestionEngine";
 import { buildAutomationJobs, type AutomationJob } from "./lib/automationEngine";
 import { loadTheme, saveTheme, type Theme } from "./lib/themePreference";
@@ -46,16 +51,6 @@ interface HealthStatus {
   platform: string;
 }
 
-const DEFAULT_FLAG_SETTINGS: FlagSettings = {
-  enabled: true,
-  prefixes: DEFAULT_FLAG_PREFIX_PREFERENCE,
-  scanOutput: true,
-  scanStructured: true,
-  scanBase64: true,
-  caseSensitive: false,
-  pauseOnMatch: false,
-};
-
 const IDLE_UPDATE_STATE: UpdateState = {
   phase: "idle",
   downloadedBytes: 0,
@@ -68,17 +63,6 @@ interface AutomationState {
 }
 
 const IDLE_AUTOMATION: AutomationState = { phase: "idle", concurrency: 3, started: 0 };
-
-function taskFlagHits(task: TaskState, settings: FlagSettings, prefixes: string[]) {
-  const text = [
-    settings.scanOutput ? task.runs.map((run) => run.output).join("\n") : "",
-    settings.scanStructured ? task.findings.map((finding) => finding.value).join("\n") : "",
-    String(task.parameters.output ?? ""),
-  ].join("\n");
-  return settings.enabled
-    ? detectFlags(text, prefixes, settings.caseSensitive).filter((hit) => settings.scanBase64 || hit.source !== "base64")
-    : [];
-}
 
 const GITHUB_URL = "https://github.com/ZBHD/CTFBox";
 const RELEASE_NOTES_URL = `${GITHUB_URL}/releases/latest`;
@@ -122,6 +106,7 @@ interface AppProps {
 }
 
 function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
+  const flagScannerRef = useRef(new TaskFlagScanner());
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState(false);
   const [selection, setSelection] = useState<ToolSelection>({ toolId: "sqlmap" });
@@ -133,10 +118,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const [restartBusy, setRestartBusy] = useState(false);
   const [restartError, setRestartError] = useState<string>();
   const [linkError, setLinkError] = useState<string>();
-  const [flagSettings, setFlagSettings] = useState<FlagSettings>(() => ({
-    ...DEFAULT_FLAG_SETTINGS,
-    prefixes: loadFlagPrefixPreference(),
-  }));
+  const [flagSettings, setFlagSettings] = useState<FlagSettings>(() =>
+    loadFlagSettingsPreference(loadFlagPrefixPreference()));
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [tasks, setTasks] = useState<Record<string, TaskState>>({
     "sqlmap:default": createTask("sqlmap"),
@@ -152,6 +135,14 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const installedRef = useRef(false);
   const linkSequenceRef = useRef(0);
   const automationJobsRef = useRef<Record<string, Set<string>>>({});
+  const streamEventBatcherRef = useRef<StreamEventBatcher<ToolStreamEvent>>();
+  streamEventBatcherRef.current ??= new StreamEventBatcher((events) => {
+    setTasks((current) => events.reduce((next, event) => updateTaskContainingRun(
+      next,
+      event.runId,
+      (owner) => applyToolStreamEvent(owner, event),
+    ), current));
+  });
 
   const commitUpdateState = useCallback((state: UpdateState) => {
     updateStateRef.current = state;
@@ -242,6 +233,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
       .catch(() => setHealthError(true));
   }, []);
 
+  useEffect(() => () => streamEventBatcherRef.current?.dispose(), []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     saveTheme(theme);
@@ -249,7 +242,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
 
   useEffect(() => {
     saveFlagPrefixPreference(flagSettings.prefixes);
-  }, [flagSettings.prefixes]);
+    saveFlagSettingsPreference(flagSettings);
+  }, [flagSettings]);
 
   const startUpdateDownload = () => {
     const ownedHandle = updateHandleRef.current;
@@ -328,7 +322,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   const task = tasks[key] ?? createTask(selection.toolId);
   const automation = automations[key] ?? IDLE_AUTOMATION;
   const plugin = getPlugin(selection.toolId) ?? getPlugin("sqlmap")!;
-  const isWebTool = selection.toolId === "sqlmap" || selection.toolId === "sstimap";
+  const isWebTool = plugin.category === "web" && plugin.runner !== undefined;
   const command = useMemo(
     () => isWebTool ? buildCommand(selection.toolId, task.edition, task.parameters as ToolParameters) : [],
     [isWebTool, selection.toolId, task.edition, task.parameters],
@@ -369,7 +363,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   };
 
   const runWithTaskParameters = useCallback((taskKey: string, taskSnapshot: TaskState, parameters: ToolParameters, automationJob?: AutomationJob) => {
-    if (taskSnapshot.toolId !== "sqlmap" && taskSnapshot.toolId !== "sstimap") return;
+    if (!getPlugin(taskSnapshot.toolId)?.runner) return;
     if (!automationJob && taskSnapshot.status === "running") return;
     const nextCommand = buildCommand(taskSnapshot.toolId, taskSnapshot.edition, parameters);
     if (nextCommand.length <= 1) return;
@@ -380,7 +374,14 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     } catch (error) {
       setTasks((current) => {
         const owner = current[taskKey] ?? createTask(taskSnapshot.toolId);
-        return { ...current, [taskKey]: { ...owner, status: "failed", runs: [...owner.runs, { id, argv: nextCommand, status: "failed", output: error instanceof Error ? error.message : "命令无效", collapsed: false }] } };
+        const failed = appendRun(owner, {
+          id,
+          argv: nextCommand,
+          status: "running",
+          output: error instanceof Error ? error.message : "命令无效",
+          collapsed: false,
+        });
+        return { ...current, [taskKey]: finishRun(failed, id, "failed") };
       });
       return;
     }
@@ -401,10 +402,7 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     });
     const onEvent = new Channel<ToolStreamEvent>();
     onEvent.onmessage = (event) => {
-      setTasks((current) => Object.fromEntries(Object.entries(current).map(([taskKey, state]) => [
-        taskKey,
-        applyToolStreamEvent(state, event),
-      ])));
+      streamEventBatcherRef.current?.push(event);
     };
     void invoke("run_tool", { request, onEvent }).catch((error) => {
       setTasks((current) => updateTaskContainingRun(current, id, (owner) =>
@@ -478,7 +476,10 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
   };
 
   const prefixes = flagSettings.prefixes.enabled;
-  const flagHits = taskFlagHits(task, flagSettings, prefixes);
+  const flagHits = useMemo(
+    () => flagScannerRef.current.scan(key, task, flagSettings, prefixes),
+    [flagSettings, key, prefixes, task],
+  );
   const activeAutomationRuns = task.runs.filter((run) => run.status === "running" && run.automationJobId).length;
   const updateAutomation = (updater: (current: AutomationState) => AutomationState) => {
     setAutomations((current) => ({ ...current, [key]: updater(current[key] ?? IDLE_AUTOMATION) }));
@@ -503,8 +504,8 @@ function App({ updateAdapter = DEFAULT_UPDATE_ADAPTER }: AppProps) {
     for (const [taskKey, automationState] of Object.entries(automations)) {
       if (automationState.phase !== "running") continue;
       const taskSnapshot = tasks[taskKey];
-      if (!taskSnapshot || (taskSnapshot.toolId !== "sqlmap" && taskSnapshot.toolId !== "sstimap")) continue;
-      if (flagSettings.pauseOnMatch && taskFlagHits(taskSnapshot, flagSettings, prefixes).length > 0) {
+      if (!taskSnapshot || getPlugin(taskSnapshot.toolId)?.category !== "web" || !getPlugin(taskSnapshot.toolId)?.runner) continue;
+      if (flagSettings.pauseOnMatch && flagScannerRef.current.scan(taskKey, taskSnapshot, flagSettings, prefixes).length > 0) {
         stopAutomationForTask(taskKey, taskSnapshot, "flag-found");
         continue;
       }

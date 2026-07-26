@@ -20,4 +20,30 @@ describe("theme preference", () => {
     saveTheme("light", storage);
     expect(loadTheme(storage)).toBe("light");
   });
+
+  it("falls back cleanly when browser storage is unavailable", () => {
+    const storage = {
+      getItem: () => { throw new Error("blocked"); },
+      setItem: () => { throw new Error("blocked"); },
+    };
+
+    expect(loadTheme(storage)).toBe("dark");
+    expect(() => saveTheme("light", storage)).not.toThrow();
+  });
+
+  it("handles an inaccessible global localStorage property", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get: () => { throw new Error("blocked"); },
+    });
+
+    try {
+      expect(loadTheme()).toBe("dark");
+      expect(() => saveTheme("light")).not.toThrow();
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
 });

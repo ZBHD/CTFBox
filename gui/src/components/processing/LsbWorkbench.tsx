@@ -1,6 +1,8 @@
 import { Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { DEFAULT_LSB_PARAMETERS } from "../../lib/lsbEngine";
+import { MAX_LSB_FILE_BYTES, validateImageDimensions } from "../../lib/localFileLimits";
+import { OperationGeneration } from "../../lib/operationGeneration";
 import { parsePaletteIndexes } from "../../lib/pngPalette";
 import type { LsbLocalAnalysis } from "../../lib/lsbTypes";
 import { LsbWorkerClient } from "../../lib/lsbWorkerClient";
@@ -32,21 +34,14 @@ function initialAnalysis(): LsbLocalAnalysis {
   };
 }
 
-function readDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("读取图片失败")));
-    reader.readAsDataURL(file);
-  });
-}
-
-function decodePixels(dataUrl: string) {
+function decodePixels(sourceUrl: string) {
   return new Promise<{ width: number; height: number; rgba: Uint8Array }>((resolve, reject) => {
     const image = new Image();
     image.addEventListener("load", () => {
-      if (image.naturalWidth > 10_000 || image.naturalHeight > 10_000) {
-        reject(new Error("图片尺寸超过 10000 × 10000 限制"));
+      try {
+        validateImageDimensions(image.naturalWidth, image.naturalHeight);
+      } catch (error) {
+        reject(error);
         return;
       }
       const canvas = document.createElement("canvas");
@@ -61,7 +56,7 @@ function decodePixels(dataUrl: string) {
       resolve({ width: canvas.width, height: canvas.height, rgba: new Uint8Array(context.getImageData(0, 0, canvas.width, canvas.height).data) });
     });
     image.addEventListener("error", () => reject(new Error("图片格式无法解码")));
-    image.src = dataUrl;
+    image.src = sourceUrl;
   });
 }
 
@@ -69,9 +64,20 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
   const analysis = provided ?? initialAnalysis();
   const analysisRef = useRef(analysis);
   const clientRef = useRef<LsbWorkerClient>();
+  const generationRef = useRef(new OperationGeneration());
+  const previewUrlRef = useRef<string>();
   analysisRef.current = analysis;
 
-  useEffect(() => () => clientRef.current?.dispose(), []);
+  const revokePreview = () => {
+    if (!previewUrlRef.current) return;
+    URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = undefined;
+  };
+  useEffect(() => () => {
+    generationRef.current.invalidate();
+    clientRef.current?.dispose();
+    revokePreview();
+  }, []);
   const getClient = () => {
     clientRef.current ??= new LsbWorkerClient();
     return clientRef.current;
@@ -83,52 +89,73 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
   };
 
   const loadFile = async (file: File) => {
+    const generation = generationRef.current.begin();
     clientRef.current?.cancel();
-    if (file.size > 512 * 1024 * 1024) {
-      update({ status: "failed", fileName: file.name, fileSize: file.size, source: undefined, candidates: [], error: "文件超过 512 MiB 限制" });
+    revokePreview();
+    if (file.size > MAX_LSB_FILE_BYTES) {
+      update({ status: "failed", fileName: file.name, fileSize: file.size, dataUrl: undefined, source: undefined, candidates: [], error: "文件超过 64 MiB 限制" });
       return;
     }
-    update({ status: "loading", fileName: file.name, fileSize: file.size, source: undefined, candidates: [], selectedId: undefined, error: undefined });
+    update({ status: "loading", fileName: file.name, fileSize: file.size, dataUrl: undefined, source: undefined, candidates: [], selectedId: undefined, error: undefined });
+    const previewUrl = URL.createObjectURL(file);
     try {
-      const [bytes, dataUrl] = await Promise.all([file.arrayBuffer().then((value) => new Uint8Array(value)), readDataUrl(file)]);
-      const pixels = await decodePixels(dataUrl);
+      const [bytes, pixels] = await Promise.all([
+        file.arrayBuffer().then((value) => new Uint8Array(value)),
+        decodePixels(previewUrl),
+      ]);
+      if (!generationRef.current.isCurrent(generation)) {
+        URL.revokeObjectURL(previewUrl);
+        return;
+      }
       const palette = parsePaletteIndexes(bytes);
+      previewUrlRef.current = previewUrl;
       update({
         status: "idle",
         fileName: file.name,
         fileSize: file.size,
-        dataUrl,
+        dataUrl: previewUrl,
         source: { ...pixels, paletteIndices: palette.supported ? palette.indexes : undefined },
         candidates: [],
         selectedId: undefined,
         error: undefined,
       });
     } catch (error) {
+      URL.revokeObjectURL(previewUrl);
+      if (!generationRef.current.isCurrent(generation)) return;
       update({ status: "failed", source: undefined, candidates: [], error: error instanceof Error ? error.message : String(error) });
     }
   };
 
   const run = async () => {
-    if (!analysis.source) return;
-    if (analysis.status === "running") {
+    const current = analysisRef.current;
+    if (!current.source) return;
+    if (current.status === "running") {
+      generationRef.current.invalidate();
       getClient().cancel();
+      update({ status: "cancelled", progress: undefined });
       return;
     }
+    const generation = generationRef.current.begin();
     update({ status: "running", candidates: [], selectedId: undefined, error: undefined, progress: undefined });
     try {
-      if (analysis.mode === "auto") {
-        const candidates = await getClient().auto(analysis.source, {
-          depth: analysis.depth,
+      if (current.mode === "auto") {
+        const candidates = await getClient().auto(current.source, {
+          depth: current.depth,
           prefixes: flagEnabled ? flagPrefixes : [],
           caseSensitive: flagCaseSensitive,
-          onProgress: (progress) => update({ progress }),
+          onProgress: (progress) => {
+            if (generationRef.current.isCurrent(generation)) update({ progress });
+          },
         });
+        if (!generationRef.current.isCurrent(generation)) return;
         update({ status: "completed", candidates, selectedId: candidates[0]?.id, progress: undefined });
       } else {
-        const candidate = await getClient().manual(analysis.source, analysis.parameters, { prefixes: flagEnabled ? flagPrefixes : [], caseSensitive: flagCaseSensitive });
+        const candidate = await getClient().manual(current.source, current.parameters, { prefixes: flagEnabled ? flagPrefixes : [], caseSensitive: flagCaseSensitive });
+        if (!generationRef.current.isCurrent(generation)) return;
         update({ status: "completed", candidates: [candidate], selectedId: candidate.id, progress: undefined });
       }
     } catch (error) {
+      if (!generationRef.current.isCurrent(generation)) return;
       if (error instanceof Error && error.name === "AbortError") update({ status: "cancelled", progress: undefined });
       else update({ status: "failed", progress: undefined, error: error instanceof Error ? error.message : String(error) });
     }
@@ -142,11 +169,14 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
       sources: candidate.parameters.sources.map((item) => ({ ...item })),
       scan: { ...candidate.parameters.scan },
     };
+    const generation = generationRef.current.begin();
     update({ mode: "manual", parameters, status: "running", selectedId: candidate.id, error: undefined, progress: undefined });
     try {
       const extracted = await getClient().manual(source, parameters, { prefixes: flagEnabled ? flagPrefixes : [], caseSensitive: flagCaseSensitive });
+      if (!generationRef.current.isCurrent(generation)) return;
       update({ status: "completed", candidates: [extracted], selectedId: extracted.id });
     } catch (error) {
+      if (!generationRef.current.isCurrent(generation)) return;
       if (error instanceof Error && error.name === "AbortError") update({ status: "cancelled" });
       else update({ status: "failed", error: error instanceof Error ? error.message : String(error) });
     }
@@ -166,7 +196,7 @@ export function LsbWorkbench({ analysis: provided, flagPrefixes, flagCaseSensiti
     <div className="local-tool-strip">
       <div><span>Misc / LSB 隐写</span><strong>自动搜索与完整手动位流提取</strong></div>
       <div className="local-tool-actions">
-        <button type="button" className="secondary-action" onClick={() => { clientRef.current?.cancel(); onClear(); }}><RotateCcw size={14} />清空</button>
+        <button type="button" className="secondary-action" onClick={() => { generationRef.current.invalidate(); clientRef.current?.cancel(); revokePreview(); onClear(); }}><RotateCcw size={14} />清空</button>
         <button type="button" className="run-action" disabled={!analysis.source || analysis.status === "loading"} onClick={() => void run()}>{analysis.status === "running" ? <Square size={13} /> : <Play size={14} />}{analysis.status === "running" ? "取消" : analysis.mode === "auto" ? "开始分析" : "提取数据"}</button>
       </div>
     </div>

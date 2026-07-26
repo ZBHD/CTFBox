@@ -72,11 +72,31 @@ class InstallerConfigTests(unittest.TestCase):
             self.assertIn(permission, capability["permissions"])
         self.assertNotIn("updater:default", capability["permissions"])
 
+        import_step = workflow_step(workflow, "导入 Windows 代码签名证书")
+        self.assertIn("WINDOWS_CERTIFICATE_BASE64", import_step)
+        self.assertIn("WINDOWS_CERTIFICATE_PASSWORD", import_step)
+        self.assertIn("Import-PfxCertificate", import_step)
+        self.assertIn("Cert:\\CurrentUser\\My", import_step)
+        self.assertIn("$signingCertificates.Count -ne 1", import_step)
+        self.assertIn("$_.HasPrivateKey", import_step)
+
         build_step = workflow_step(workflow, "构建安装包")
-        self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY", build_step)
-        self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", build_step)
+        self.assertIn("certificateThumbprint", build_step)
+        self.assertIn("digestAlgorithm", build_step)
+        self.assertIn("timestampUrl", build_step)
+        self.assertIn("tauri build --ci --config", build_step)
+
+        verify_signature_step = workflow_step(workflow, "验证 Windows 代码签名")
+        self.assertIn("Get-AuthenticodeSignature", verify_signature_step)
+        self.assertIn("target/release/ctfbox.exe", verify_signature_step)
+        self.assertIn("bundle/nsis", verify_signature_step)
+        self.assertIn("SignerCertificate.Thumbprint", verify_signature_step)
+        self.assertIn("TimeStamperCertificate", verify_signature_step)
 
         release_step = workflow_step(workflow, "发布到 GitHub Release")
+        self.assertLess(workflow.index(import_step), workflow.index(build_step))
+        self.assertLess(workflow.index(build_step), workflow.index(verify_signature_step))
+        self.assertLess(workflow.index(verify_signature_step), workflow.index(release_step))
         self.assertLess(workflow.index(build_step), workflow.index(release_step))
         self.assertIn("CTFBox-$version-windows-x64-setup.exe", release_step)
         self.assertIn("$release.assets.Count -ne 1", release_step)
@@ -91,11 +111,38 @@ class InstallerConfigTests(unittest.TestCase):
         for forbidden in (
             "latest.json",
             ".nsis.zip",
-            ".sig",
             "SHA256SUMS.txt",
             "TAURI_SIGNING_PRIVATE_KEY",
         ):
             self.assertNotIn(forbidden, workflow)
+        self.assertNotIn(".sig", release_step)
+
+        cleanup_step = workflow_step(workflow, "清理 Windows 代码签名证书")
+        self.assertIn("if: always()", cleanup_step)
+        self.assertIn("Remove-Item", cleanup_step)
+        self.assertIn("Cert:\\CurrentUser\\My", cleanup_step)
+
+    def test_release_runs_all_source_quality_gates_before_build(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        rust_step = workflow_step(workflow, "Rust 质量检查")
+        self.assertIn("cargo fmt", rust_step)
+        self.assertIn("-- --check", rust_step)
+        self.assertIn("cargo test", rust_step)
+
+        python_step = workflow_step(workflow, "Python 与汉化质量检查")
+        self.assertIn('python -m unittest discover -s tools -p "test_*.py"', python_step)
+        self.assertIn("python tools/verify_localization.py", python_step)
+
+        build_step = workflow_step(workflow, "构建安装包")
+        for quality_step in (
+            workflow_step(workflow, "前端质量检查"),
+            rust_step,
+            python_step,
+        ):
+            self.assertLess(workflow.index(quality_step), workflow.index(build_step))
 
     def test_nsis_defaults_to_program_files_and_creates_desktop_shortcut(self):
         config_path = ROOT / "gui" / "src-tauri" / "tauri.conf.json"
@@ -118,6 +165,18 @@ class InstallerConfigTests(unittest.TestCase):
         self.assertIn("bundle/nsis", workflow)
         self.assertIn('-Filter "*-setup.exe"', workflow)
         self.assertNotIn("bundle/portable", workflow)
+
+    def test_shared_tool_registry_is_bundled_with_the_launcher(self):
+        config = json.loads(
+            (ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        resources = config["bundle"]["resources"]
+        self.assertEqual(
+            resources["../../tools/tool_registry.json"],
+            "tools/tool_registry.json",
+        )
 
     def test_windows_powershell_build_script_is_ascii_compatible(self):
         script = ROOT / "tools" / "prepare_python_runtime.ps1"

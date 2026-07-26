@@ -12,20 +12,12 @@ import {
   SunMoon,
 } from "lucide-react";
 import { useState } from "react";
-import type { FlagPrefixPreference } from "../lib/flagPrefixPreference";
+import type { FlagSettings } from "../lib/flagSettingsPreference";
 import { formatUpdateError, type UpdateState } from "../lib/updateManager";
 import type { Theme } from "../lib/themePreference";
 import { FlagPrefixList } from "./FlagPrefixList";
 
-export interface FlagSettings {
-  enabled: boolean;
-  prefixes: FlagPrefixPreference;
-  scanOutput: boolean;
-  scanStructured: boolean;
-  scanBase64: boolean;
-  caseSensitive: boolean;
-  pauseOnMatch: boolean;
-}
+export type { FlagSettings } from "../lib/flagSettingsPreference";
 
 export type SettingsSection = "flags" | "appearance" | "updates";
 

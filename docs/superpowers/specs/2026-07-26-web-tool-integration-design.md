@@ -1,135 +1,226 @@
-# 新增 Web 工具接入（示范：dirsearch）— 设计
+# 新增 Web 工具接入（多工具 · 按交互模型分型）— 设计
 
 - 日期：2026-07-26
-- 状态：待审阅
-- 目标：验证「注册表驱动」的扩展路径，把一个新 Web 工具从 0 接进 CTFBox 全链路
-- 推荐示范工具：**dirsearch**（目录/文件爆破，CTF Web 高频、CLI 简单、输出易解析）
+- 状态：待审阅（已扩展）
+- 目标：把多个 Web 工具接入 CTFBox，**按每个工具真实的交互模型设计前端**，确保能实际完成工作
+- 决策：Webshell = 内置原生 Python 客户端；runner 扩展支持原生二进制（subfinder 等 Go 工具）
 
-## 1. 为什么是 dirsearch
+## 0. 核心洞察：Web 工具不是一种，而是三种
 
-现有 Web 工具（SQLmap/SSTImap）都走 `tool_registry.json` → Python 启动器
-（`ctfbox_launcher.py`）→ `runpy` 执行第三方脚本的模型。新增工具的最佳示范应满足：
-纯 Python、单入口、可被现有启动器**零改动**拉起、输出行结构清晰易解析。dirsearch 全部满足，
-且与 SQLmap/SSTImap 不重叠（前两者是注入，dirsearch 是资产发现）。
+现有架构（`run_tool` 恒定 `python ctfbox_launcher.py <tool>`，注册表 `entry` 强制 `.py`）
+只适配「纯 Python + 一次性流式 CLI」这一种形态。但真实的 Web 工具至少分三型，
+**每型需要不同的运行后端与不同的前端**：
 
-本设计既落地 dirsearch，也作为「**接入任意新 Web 工具的模板**」。
-
-## 2. 接入全景（一个工具要动的 6 处）
-
-注册表是 Rust / Python / 前端三方共享的单一事实源。接入一个 Web 工具的完整改动：
-
-| # | 位置 | 改动 | 是否必需 |
+| 交互型 | 代表工具 | 运行特征 | 前端形态 |
 |---|---|---|---|
-| 1 | `tools/tool_registry.json` | 新增 `dirsearch` 条目（runner） | 必需 |
-| 2 | 仓库根 `dirsearch.cmd` + `Original/dirsearch/`（vendored 源码） | 提供入口与源码 | 必需（前置） |
-| 3 | `gui/src/lib/toolSchemas.ts` | 新增 `DIRSEARCH_SCHEMA` 与工具联合类型 | 必需 |
-| 4 | `gui/src-tauri/src/analysis/dirsearch.rs` + `mod.rs` | 输出解析器（发现的路径→Finding） | 推荐 |
-| 5 | `gui/src-tauri/src/lib.rs` 测试 | `runner_tool_ids` 期望值更新 | 必需（测试） |
-| 6 | `gui/src/lib/automationEngine.ts` / `suggestionEngine.ts` | 自动化/建议（递归发现） | 可选 |
+| **A. 扫描器**（一次性流式） | dirsearch, subfinder, nuclei, ffuf, httpx | 给目标+参数 → 流式输出行 → 收敛为结构化发现 | 参数表单 + 终端 + 发现列表（现有模型可复用） |
+| **B. 交互会话**（有状态） | webshell 管理 | 建立连接后反复发命令/取响应/浏览文件 | 连接管理 + 虚拟终端 + 文件管理器（**全新定制**） |
+| **C. 纯本地**（无进程） | crypto / misc（已存在） | 纯前端计算 | Workbench（已存在） |
 
-前端 `pluginRegistry.ts` 从注册表自动读取，`ToolRail` 自动列出 web 工具，
-`commandBuilder` 按 schema 通用拼参，`ParameterPanel`/`CommandTerminal`/`ResultsPanel`
-通用渲染——**这三处零改动**，这正是注册表驱动的价值。
+本设计落地 **A 型三款（dirsearch / subfinder / nuclei）** + **B 型一款（webshell 管理）**，
+并把「A 型可无限扩展」做成模板（ffuf/httpx 后续只增注册表+schema+解析器）。
 
-## 3. 各处细节
+## 1. 架构改造总览
 
-### 3.1 注册表 `tool_registry.json`
-```json
-{
-  "id": "dirsearch",
-  "category": "web",
-  "name": "dirsearch",
-  "description": "目录与文件爆破",
-  "editions": ["original"],
-  "runner": { "launcher": "dirsearch.cmd", "sourceDirectory": "dirsearch", "entry": "dirsearch.py" }
+| # | 位置 | 改动 | 服务于 |
+|---|---|---|---|
+| 1 | `tools/tool_registry.json` + `pluginRegistry.ts` schema | runner 增加 `kind` 与二进制/会话字段 | A(binary)/B |
+| 2 | `gui/src-tauri/src/lib.rs` `run_tool` | 按 runner.kind 分派：python 启动器 / 直接 spawn 二进制 / 会话客户端 | A(binary)/B |
+| 3 | `tools/bin/<platform>/`（vendored 二进制） | subfinder/nuclei 可执行文件 | A(binary) |
+| 4 | `tools/clients/webshell/webshell.py`（**第一方** Python 客户端） | webshell 引擎 | B |
+| 5 | `toolSchemas.ts` + 每工具解析器 `analysis/*.rs` | 扫描器参数与输出解析 | A |
+| 6 | 前端 workbench 路由 `toolUi(toolId)` | 扫描器→通用工作台；webshell→定制工作台 | A/B |
+
+**不变（注册表驱动的价值）**：`ToolRail` 自动列出 web 工具、扫描器通用参数面板/命令预览/终端
+对 A 型零改动。B 型走独立组件树，不污染 A 型。
+
+### 1.1 runner schema 演进（向后兼容）
+
+```jsonc
+// A. Python 扫描器（现状，kind 默认 "python"）
+"runner": { "kind": "python", "launcher": "dirsearch.cmd",
+            "sourceDirectory": "dirsearch", "entry": "dirsearch.py" }
+
+// A. 原生二进制扫描器
+"runner": { "kind": "binary", "program": "subfinder" }   // 解析到 tools/bin/<os>/subfinder[.exe]
+
+// B. 交互会话（第一方 Python 客户端）
+"runner": { "kind": "session", "sourceDirectory": "webshell", "entry": "webshell.py" }
+```
+
+- `pluginRegistry.ts` 的 zod schema 用 discriminated union（按 `kind`）替换现有单一 runner 对象；
+  `entry` 的 `.py` 正则保留于 python/session 分支；binary 分支的 `program` 用严格白名单正则
+  `/^[a-z0-9][a-z0-9-]*$/`（禁止路径分隔符，杜绝路径逃逸）。
+- `PluginCategory` 增补是否需要——不需要，全部仍是 `"web"`；分型靠 `runner.kind` 与前端
+  `toolUi()` 派生，**category 保持 web/crypto/misc 不动**。
+
+### 1.2 Rust `run_tool` 分派（安全前提不降级）
+
+`build_tool_arguments` 已按 `RUNNER_TOOLS` 白名单校验 tool_id/edition——保留。新增：
+```
+match runner.kind {
+  Python | Session => 现有路径（python -B -u ctfbox_launcher.py <tool> ...）
+  Binary => {
+      let program = workspace_root/tools/bin/<os>/<program>[.exe];   // 只允许白名单名 + 固定目录
+      验证 program.is_file()，否则报「找不到内置二进制」;
+      Command::new(program).args(request.arguments) ...              // 不经 shell，避免注入
+  }
 }
 ```
-首版 **original-only**（`editions: ["original"]`），汉化留待后续。`build_tool_arguments`
-（`lib.rs:145`）已支持任意 editions 白名单；`launcher` 正则要求 `*.cmd`、`entry` 要求 `*.py`
-（`pluginRegistry.ts:29`），命名满足。
+- stdout/stderr/stdin 三管道、`forward_stream`、`monitor_process`、`send_tool_input`、`stop_tool`、
+  `terminate_all` **全部复用**——二进制与会话都走同一套流式/生命周期机制。
+- `analyzer_for` 扩展匹配 dirsearch/subfinder/nuclei；webshell 返回 None（它用会话协议，不走行解析器）。
+- Windows `creation_flags(0x08000000)` 对二进制同样施加（隐藏控制台窗口）。
 
-### 3.2 Vendoring（前置步骤，非代码）
-- 把 dirsearch 源码放入 `Original/dirsearch/`（含 `dirsearch.py` 与 `db/` 字典）。
-- 仓库根加 `dirsearch.cmd`（仿现有 `sqlmap.cmd`/`sstimap.cmd`，转调统一启动器）。
-- `ctfbox_launcher.py` **无需改动**，它按注册表定位 `Original/<sourceDirectory>/<entry>`。
-- 依赖：dirsearch 需要少量 pip 包；打包运行时脚本 `tools/prepare_python_runtime.ps1`
-  需纳入其 `requirements.txt`（本设计标注此步，具体清单实现时确认）。
+## 2. A 型 · 扫描器（dirsearch / subfinder / nuclei）
 
-> 说明：vendoring 是实现阶段的准备动作，需要获取 dirsearch 源码。若你更希望换一个已内置或
-> 更轻的工具（如 arjun / whatweb），此设计的其余部分完全复用，仅换第 3.1/3.2。
+三款共享「参数表单 + 命令预览 + 应用内终端 + 结构化发现」通用工作台（现有 SQLmap/SSTImap 那套）。
+差异只在：**注册表条目、参数 schema、输出解析器**。
 
-### 3.3 参数 Schema `toolSchemas.ts`
-把工具类型联合从 `"sqlmap" | "sstimap"` 扩为含 `"dirsearch"`，注册 `DIRSEARCH_SCHEMA`。
-分组与关键字段（flag 对齐 dirsearch CLI）：
+### 2.1 dirsearch（Python，目录爆破）
+- 注册表：`kind:"python"`, `sourceDirectory:"dirsearch"`, `entry:"dirsearch.py"`，`editions:["original"]`。
+- 前置 vendoring：`Original/dirsearch/`（含字典 `db/`）+ 根 `dirsearch.cmd`；`ctfbox_launcher.py` 无需改。
+- `DIRSEARCH_SCHEMA` 分组：target(`-u`/`--urls-file`)、wordlist(`-w`/`-e`/`-f`)、
+  filter(`-i`/`-x`/`--exclude-sizes`)、request(`-m`/`-H`repeatable/`--cookie`/`--proxy`)、
+  crawl(`-r`/`-R`/`--deep-recursive`)、performance(`-t`/`--delay`/`--timeout`)。
+- `analysis/dirsearch.rs`：正则 `^\[\d{2}:\d{2}:\d{2}\]\s+(\d{3})\s+-\s+(\S+)\s+-\s+(\S+)`
+  → `Finding{kind:"path", value:路径, detail:"200 · 1KB"}`；`->` 重定向追加 detail。
 
-- **target**：`url -u`(quick)、`urlFile --urls-file`、`stdinTargets --stdin`
-- **wordlist**：`wordlist -w`、`extensions -e`(quick)、`forceExtensions -f`、`overwriteExtensions -O`
-- **filter**：`includeStatus -i`(quick)、`excludeStatus -x`、`excludeSizes --exclude-sizes`、
-  `excludeText --exclude-text`、`excludeRegex --exclude-regex`
-- **request**：`httpMethod -m`、`data -d`、`cookie --cookie`、`userAgent --user-agent`、
-  `randomAgent --random-agent`、`header -H`(repeatable)、`followRedirects -F`、`proxy --proxy`
-- **crawl**：`recursive -r`、`deepRecursive --deep-recursive`、`recursionDepth -R`、
-  `recursionStatus --recursion-status`
-- **performance**：`threads -t`(quick)、`delay --delay`、`timeout --timeout`、`maxRate --max-rate`
-- **general**：`quiet -q`、`fullUrl --full-url`
+### 2.2 subfinder（Go 二进制，子域枚举）
+- 注册表：`kind:"binary"`, `program:"subfinder"`；vendored 到 `tools/bin/windows/subfinder.exe`
+  （及后续 linux/mac）。
+- `SUBFINDER_SCHEMA` 分组：target(`-d` domain / `-dL` 域名列表文件)、sources(`-all`/`-s` 指定源/
+  `-es` 排除源/`-recursive`)、output(`-oJ` JSON 行，**强制开**以稳定解析)、
+  performance(`-t` 并发/`-timeout`/`-rl` 速率)、config(`-config`/`-pc` provider 配置)。
+- `analysis/subfinder.rs`：优先解析 `-oJ` 的 NDJSON（`{"host":"a.example.com","source":"crtsh"}`）
+  → `Finding{kind:"subdomain", value:host, detail:source}`；无 JSON 时按纯行（每行一个子域）兜底。
+- provider key：subfinder 需 API key 才能全源枚举。首版把 `~/.config/subfinder/provider-config.yaml`
+  路径暴露在参数区提示（不强制），无 key 时被动源仍可用。
 
-通用 `buildCommand`（`commandBuilder.ts`）已支持 boolean/repeatable/valueArity，无需改。
+### 2.3 nuclei（Go 二进制，模板化漏扫）
+- 注册表：`kind:"binary"`, `program:"nuclei"`；vendored 到 `tools/bin/<os>/`。模板库 `nuclei-templates`
+  体量大——**按需下载**（首次运行前提示 `-update-templates`，或指向用户已有模板目录 `-t`）。
+- `NUCLEI_SCHEMA` 分组：target(`-u`/`-l`)、templates(`-t` 路径/`-tags`/`-severity`
+  info/low/medium/high/critical 多选/`-etags`)、request(`-H`repeatable/`-proxy`/`-timeout`)、
+  output(`-jsonl` **强制**/`-silent`)、performance(`-c` 并发/`-rl` 速率/`-bulk-size`)。
+- `analysis/nuclei.rs`：解析 `-jsonl`（`{"template-id":..,"info":{"severity":"high","name":..},
+  "matched-at":url}`）→ `Finding{kind:"vuln", value:template-id, detail:"high · matched-at"}`，
+  severity 直接映射到前端 `high/suspicious/info` 色标。
 
-### 3.4 输出解析器 `analysis/dirsearch.rs`
-dirsearch 每条命中形如：
+### 2.4 A 型自动化与 Flag
+- `App.tsx` 的 web 工具自动化：dirsearch/subfinder 首版走「隐藏自动化」（加 `supportsAutomation(toolId)`
+  守卫，未实现不渲染 `AutomationControls`，避免空转）；nuclei 天然一次成型无需链式。
+- Flag 检测：所有扫描器输出与命中的响应体照走现有 `flagDetector`，命中前缀高亮置顶。
+
+### 2.5 A 型 UI（通用工作台，三款一致）
 ```
-[12:20:31] 200 -    1KB - /admin/
-[12:20:31] 301 -    0B  - /js  ->  /js/
+┌─ 参数 ──────────────┐ ┌─ 命令预览 ─────────────────────────────┐
+│ ▸ target            │ │ subfinder -d example.com -all -oJ -t 30 │
+│   -d example.com    │ └────────────────────────────────────────┘
+│ ▸ sources  [x]-all  │ ┌─ 终端（流式）──────┐ ┌─ 结构化发现 ─────┐
+│ ▸ output   [x]-oJ   │ │ [INF] enumerating… │ │ ● api.example.com│
+│ ▸ performance -t 30 │ │ api.example.com     │ │ ● cdn.example.com│
+│ [运行] [停止]        │ │ cdn.example.com     │ │ … 共 42 个子域    │
+└─────────────────────┘ └────────────────────┘ └──────────────────┘
 ```
-解析器（实现 `ToolOutputAnalyzer`，复用 `LineBuffers` 逐行 + `strip_ansi`）用正则
-`^\[\d{2}:\d{2}:\d{2}\]\s+(\d{3})\s+-\s+(\S+)\s+-\s+(\S+)` 抽出状态码/大小/路径，
-产出 `Finding{ kind: "path", value: 路径, detail: "200 · 1KB" }`。重定向箭头 `->` 追加到 detail。
-在 `analyzer_for`（`mod.rs:29`）注册 `"dirsearch" => DirsearchAnalyzer`。
 
-### 3.5 后端测试同步
-`lib.rs` 的 `runner_registry_matches_the_shared_tool_manifest` 断言从
-`["sqlmap","sstimap"]` 更新为 `["dirsearch","sqlmap","sstimap"]`；`analysis/mod.rs` 的
-`registry_returns_only_supported_analyzers` 增加 dirsearch 一行。
+## 3. B 型 · Webshell 管理（内置原生 Python 客户端）
 
-### 3.6 自动化（可选，建议做最小版）
-`App.tsx` 的 `isWebTool` 为所有 `category:"web" + runner` 工具显示 `AutomationControls`。
-两种处理：
-- **最小自动化**：`buildAutomationJobs` 为 dirsearch 返回「基础扫描 → 对发现的目录（301/403）
-  递归」的 job 链（仿 `buildSqlmapJobs` 用 findings 派生），保持与其他 web 工具体验一致。
-- 或**隐藏自动化**：给 `App.tsx` 加 `supportsAutomation(toolId)`，dirsearch 未实现时不渲染
-  `AutomationControls`（`App.tsx:596`），避免「开始」后瞬间 completed 的空转。
+**这是与扫描器完全不同的形态**：建立连接后是持续的请求/响应会话。设计成一个第一方 Python
+引擎作为**长驻进程**，前端用 `send_tool_input` 下发指令、读 stdout 结构化回包，配定制 UI。
 
-推荐先做**隐藏自动化**（改动小、无误导），把递归自动化列为后续增强。
+### 3.1 后端引擎 `tools/clients/webshell/webshell.py`
+- 以 `runner.kind:"session"` 启动（走 python 分派，长驻 REPL，不自动退出）。
+- 协议 **NDJSON over stdin/stdout**（每行一个 JSON）：
+  - 前端→引擎（经 `send_tool_input`）：
+    `{"op":"connect", "url", "password":"cmd", "shellType":"php|jsp|asp|aspx", "encoder":"raw|base64", "headers":{}, "proxy"}`、
+    `{"op":"exec","cmd":"id"}`、`{"op":"ls","path":"/var/www"}`、`{"op":"read","path":..}`、
+    `{"op":"upload","path":..,"dataB64":..}`、`{"op":"delete","path":..}`、`{"op":"disconnect"}`
+  - 引擎→前端（stdout NDJSON，被定制 client 解析，不进通用终端）：
+    `{"ev":"connected","os","user","cwd","serverInfo"}`、`{"ev":"exec","cmd","output","exitHint"}`、
+    `{"ev":"listing","path","entries":[{"name","type":"file|dir","size","mtime"}]}`、
+    `{"ev":"file","path","dataB64"}`、`{"ev":"progress",...}`、`{"ev":"error","message"}`
+- 引擎内含各 shell 类型的 payload 生成器：PHP `eval($_POST[pass])` 系、JSP/ASP 对应变体；
+  编码器（raw/base64）；命令执行、目录列举、文件读写、删除的远端小脚本模板。
+- 纯标准库（urllib）实现，**不新增 pip 依赖**；代理/自定义头/超时可配。
+- 安全边界：仅连接用户显式填入的目标（授权 CTF/渗透场景）；引擎不写本地任意路径，
+  下载数据经 base64 回传由前端另存。
 
-## 4. UI 与最终实现效果
+### 3.2 前端 `WebshellWorkbench.tsx`（定制，独立组件树）
+- 会话客户端 `webshellSessionClient.ts`：封装 `run_tool`（启动引擎）+ `send_tool_input`（发 op）
+  + 监听 Channel 解析 `ev` → 更新状态；`stop_tool` 断开。仿 `stegoWorkerClient` 的请求/响应
+  配对与生命周期，但通道是 Tauri 进程而非 Web Worker。
+- 三区结构：
+  - **连接管理**（左）：会话列表，新增/编辑/测试连接。字段：名称、URL、密码参数名、
+    shell 类型、编码器、自定义头、代理。「测试连接」→ `connect` → 显示 `connected` 服务器信息。
+  - **虚拟终端**（中·标签1）：输入命令 → `exec` → 回显 `output`；保留历史、上下键复用。
+    与真终端观感一致，但每条命令是一次 webshell 请求。
+  - **文件管理器**（中·标签2）：当前路径 + 条目表（名称/类型/大小/时间），双击目录进入、
+    文件可下载（`read`→另存）、上传（选择本地文件→`upload`）、删除（二次确认）。
+  - **服务器信息**（中·标签3）：os / 当前用户 / 工作目录 / 中间件版本等 `connected` 携带信息。
+- Flag：命令输出与下载文件内容照走 `flagDetector`，命中高亮。
 
-- 左侧 `ToolRail` 的「WEB 工具」区自动多出 `dirsearch` 一项（图标沿用 `ToolRail.tsx:129`
-  的 index 映射，第 3 个工具得 `Code2`）。
-- 选中后进入标准 Web 工作台：右侧参数面板按 `DIRSEARCH_SCHEMA` 自动生成分组表单，
-  顶部命令预览实时更新（如 `dirsearch.cmd --url http://... -e php,html -t 20`）。
-- 点「运行」在应用内终端流式回显；每发现一个路径，右侧「结构化结果」区新增一条
-  `path` Finding；命中 Flag 检测头的响应会被标记。
-- edition 选择器仅有「原版」（首版），CN 后续再加。
+### 3.3 Webshell UI（定制）
+```
+┌─ 连接 ───────┐ ┌─ [终端] 文件 信息 ───────────────────────────┐
+│ ● shell@t1   │ │ www-data@target:/var/www/html$ id             │
+│   /shell.php │ │ uid=33(www-data) gid=33(www-data) groups=33   │
+│ ○ shell@t2   │ │ www-data@target:/var/www/html$ cat /flag.txt  │
+│ [+ 新建连接] │ │ flag{...}   ← 命中高亮                          │
+│ [测试连接]   │ │ > _                                            │
+└──────────────┘ └───────────────────────────────────────────────┘
+（文件标签：路径 /var/www/html ▸ 表格 name|type|size|mtime ▸ [下载][上传][删除]）
+```
 
-**最终效果示例**：填 `--url http://target/`、`-e php,txt`、`-t 30` → 运行后终端滚动出
-`200 - /admin/`、`403 - /backup/` 等；结构化结果区聚合出可点路径列表，`/flag.txt`
-若命中前缀会高亮，一眼定位。
+**最终效果**：新建一个指向 `http://target/shell.php`、密码 `cmd`、类型 php、编码 base64 的连接 →
+点「测试连接」显示 `www-data / Linux / /var/www/html` → 终端里 `id`/`ls -la` 实时回显 →
+文件标签浏览目录、把 `/flag.txt` 下载到本地或直接在终端 `cat` 出并高亮 → 完成实战取证。
 
-## 5. 测试
+## 4. 前端工作台路由
 
-- 后端：`analysis/dirsearch.rs` 单测——喂典型输出行，断言解析出正确的路径/状态/大小
-  Finding；含 ANSI 色、重定向箭头、跨 chunk 截断的用例（复用 `LineBuffers` 语义）。
-  `lib.rs`/`mod.rs` 既有注册表测试更新。
-- 前端：`toolSchemas.test.ts` 增加 dirsearch schema 完整性断言；`commandBuilder.test.ts`
-  增加 dirsearch 拼参用例（含 repeatable header、boolean flag）。
-- 若做「隐藏自动化」：`App.test.tsx` 断言 dirsearch 不渲染 `AutomationControls`。
+`toolUi(toolId)` 决定选中某 web 工具时渲染哪种工作台：
+```ts
+type ToolUi = "scanner" | "webshell";
+function toolUi(toolId: string): ToolUi {
+  return toolId === "webshell" ? "webshell" : "scanner";
+}
+```
+- `scanner` → 现有通用 web 工作台（schema 驱动），dirsearch/subfinder/nuclei/ffuf/httpx 共用。
+- `webshell` → `WebshellWorkbench`。
+- `ToolRail` 的「WEB 工具」区自动多出四项（图标沿用 index 映射；webshell 可给独立图标如 `TerminalSquare`）。
+
+## 5. 测试（TDD）
+
+**后端 Rust**
+- `run_tool` 分派：新增 binary 分派单测——mock 一个 `tools/bin/<os>/echo-like` 占位，断言按
+  `program` 解析路径、拒绝含分隔符的非法 program、拒绝不在白名单的 tool_id。
+- `runner_tool_ids()` 期望更新为 `["dirsearch","nuclei","sqlmap","sstimap","subfinder","webshell"]`。
+- `analysis/{dirsearch,subfinder,nuclei}.rs` 各自行解析单测：喂典型输出（含 NDJSON、ANSI、跨 chunk 截断），断言 Finding 字段。
+- `analysis/mod.rs` `registry_returns_only_supported_analyzers` 增补三行；webshell 断言返回 None。
+
+**Webshell 引擎（Python，pytest）**
+- 起一个本地 `http.server` + 内存假 webshell 端点，断言 `connect/exec/ls/read/upload/delete`
+  的 NDJSON 往返正确；base64 编码器路径；错误目标→`{"ev":"error"}` 不崩溃。
+
+**前端（vitest）**
+- `toolSchemas.test.ts`：dirsearch/subfinder/nuclei schema 完整性 + `commandBuilder` 拼参
+  （repeatable header、boolean flag、强制 `-oJ/-jsonl`）。
+- `webshellSessionClient.test.ts`（mock Tauri channel + invoke）：op 下发与 ev 解析配对、
+  断线/重连、Flag 命中。
+- `WebshellWorkbench` 三标签渲染测试；`App.test.tsx` 断言 webshell 走定制工作台、
+  dirsearch 走通用工作台且不渲染 `AutomationControls`。
 
 ## 6. 边界与风险
 
-- **Vendoring 体量**：dirsearch 带字典（`db/`）体积不小，且会增大安装包；实现前需确认
-  是否纳入默认打包，或按需下载。
-- **依赖冲突**：dirsearch 的 pip 依赖需与现有 SQLmap/SSTImap 运行时兼容，打包脚本要一并验证。
-- **输出格式漂移**：不同 dirsearch 版本行格式略有差异，解析器正则要容错（宽松空白匹配），
-  解析失败不影响原始回显（analyzer 只增补 Finding，不消费文本，见 `lib.rs` 既有测试语义）。
-- **模板可迁移性**：本设计的第 2/3 节即通用接入模板，换任何 Python CLI 工具，仅第 3.1/3.2/3.3/3.4
-  随之替换，其余框架不动。
+- **二进制体量/平台**：subfinder/nuclei 需按 win/linux/mac 各带一份，显著增大安装包；
+  首版可仅带 Windows，其余按需下载；nuclei 模板库不随包，首次引导下载或指向本地目录。
+- **provider/模板依赖**：subfinder 全源需 API key、nuclei 需模板——参数区明确提示，缺失时降级可用。
+- **Webshell 是攻击性工具**：仅用于授权 CTF/渗透（白帽场景，符合本项目安全研究定位）；
+  引擎只连用户显式目标、不做批量、不内置任何真实目标；下载数据由用户另存，不自动落盘。
+- **会话协议健壮性**：NDJSON 逐行解析要容忍半行/脏行（远端回显污染）；单条 op 超时不阻塞整会话；
+  引擎对畸形远端响应返回 `error` 事件而非退出。
+- **runner 安全**：binary 只允许白名单名 + 固定 `tools/bin/<os>/` 目录 + 不经 shell 直接 spawn，
+  杜绝路径逃逸与命令注入；沿用现有 tool_id 白名单校验。
+- **A 型可扩展**：ffuf/httpx 等后续接入只需第 2 节三件套（注册表+schema+解析器），框架零改动。
+```
+

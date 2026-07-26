@@ -21,4 +21,10 @@ describe("global flag detector", () => {
   it("respects case-sensitive matching", () => {
     expect(detectFlags("RkxBR3tDQVNFfQ==", ["flag"], true)).toEqual([]);
   });
+
+  it("prefers the longest matching prefix over a generic suffix", () => {
+    expect(detectFlags("NSSCTF{complete_prefix}", ["CTF", "NSSCTF"], false)).toEqual([
+      { text: "NSSCTF{complete_prefix}", source: "plain" },
+    ]);
+  });
 });

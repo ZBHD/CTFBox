@@ -19,6 +19,13 @@ setup/
 
 # Local test output
 artifacts/scenario-test/
+outputs/
+.codex_xlsx_build/
+
+# Vendored external tools (见 tools/VENDORING.md：预置依赖，不入库)
+tools/bin/
+Original/dirsearch/
+Original/*/**/__pycache__/
 
 # Local environment and secrets
 .env

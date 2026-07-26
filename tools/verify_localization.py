@@ -15,7 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ORIGINAL = ROOT / "Original"
 CN = ROOT / "CNversion"
-BASELINE = ROOT / "docs" / "localization" / "original-baseline.sha256"
+BASELINE = ROOT / "tools" / "localization" / "original-baseline.sha256"
 ALLOWED_ORIGINAL_ADDITIONS = {
     "sqlmap-1.10/使用说明.md",
     "SSTImap-master/使用说明.md",

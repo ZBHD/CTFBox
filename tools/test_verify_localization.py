@@ -9,6 +9,15 @@ from unittest.mock import patch
 from tools import verify_localization
 
 
+class LocalizationBaselineTests(unittest.TestCase):
+    def test_baseline_is_kept_with_localization_tools(self):
+        expected = verify_localization.ROOT / "tools" / "localization" / "original-baseline.sha256"
+
+        self.assertEqual(verify_localization.BASELINE, expected)
+        self.assertTrue(expected.is_file())
+        self.assertTrue(verify_localization.read_baseline())
+
+
 class OriginalHashTests(unittest.TestCase):
     def test_text_hash_is_independent_of_line_endings_and_extension(self):
         with TemporaryDirectory() as directory:

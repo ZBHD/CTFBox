@@ -1,6 +1,7 @@
 // 音频隐写分析编排：以「已解码 PCM + 原始文件字节」为输入（解码在主线程完成），
 // 依次跑波形/频谱/LSB/声道差分/字符串/元数据，产出结构化证据。纯逻辑，可单测。
 import { channelDifference, extractLsbBytes, longestPrintableRun } from "./audioLsb";
+import { detectEcho } from "./audioCepstrum";
 import { detectDtmf } from "./audioDtmf";
 import { detectPhaseEncoding } from "./audioPhase";
 import { renderSpectrogram, renderWaveform } from "./audioRender";
@@ -156,6 +157,16 @@ export async function analyzeAudio(input: AudioAnalysisInput, hooks: AudioAnalys
         report.findings.push({ id: "phase-detect", severity: "suspicious", source: "相位编码", title: "疑似相位编码隐写", detail: phase.detail });
       }
     } catch { /* phase is best-effort */ }
+  }
+
+  // Echo hiding detection
+  if (pcm.channels[0] && pcm.channels[0].length >= 4096) {
+    try {
+      const echo = detectEcho(pcm.channels[0], pcm.sampleRate, 1024);
+      if (echo.detected) {
+        report.findings.push({ id: "echo-detect", severity: "suspicious", source: "回声隐藏", title: "检测到回声隐藏信号", detail: echo.detail });
+      }
+    } catch { /* cepstrum is best-effort */ }
   }
 
   if (options.lsb && !pcm.lossy) {

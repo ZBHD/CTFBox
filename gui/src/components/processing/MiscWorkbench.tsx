@@ -6,6 +6,7 @@ import type { LocalAnalysisState, LsbLocalAnalysis } from "../../lib/lsbTypes";
 import type { StegoLocalAnalysis } from "../../lib/stegoTypes";
 import type { ZipLocalAnalysis } from "../../lib/zipTypes";
 import { AudioStegoWorkbench } from "./AudioStegoWorkbench";
+import { CryptaWorkbench } from "./CryptaWorkbench";
 import { FakeEncryptionWorkbench } from "./FakeEncryptionWorkbench";
 import { LsbWorkbench } from "./LsbWorkbench";
 import { StegoWorkbench } from "./StegoWorkbench";
@@ -27,6 +28,7 @@ const MODE_META: Record<string, { title: string; description: string; accept: st
   lsb: { title: "LSB 隐写", description: "按颜色通道、位平面和像素顺序提取低位数据", accept: "image/*" },
   image: { title: "图片隐写", description: "检查元数据、颜色通道、附加数据和可打印字符串", accept: "image/*" },
   audio: { title: "音频隐写", description: "从波形、频谱和声道差异中定位隐藏数据", accept: "audio/*" },
+  cryptanalysis: { title: "密码分析", description: "自动识别密码类型并执行破解（RSA/AES/哈希/PRNG 等）", accept: ".txt,.pem,.key" },
 };
 
 function ToggleButton({ active, children, onClick }: { active: boolean; children: ReactNode; onClick: () => void }) {
@@ -53,6 +55,7 @@ export function MiscWorkbench({ mode, parameters, onChange, onClear, analysis, f
   if (mode === "image") return <StegoWorkbench analysis={analysis as StegoLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
   if (mode === "fake-encryption") return <FakeEncryptionWorkbench analysis={analysis as ZipLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
   if (mode === "audio") return <AudioStegoWorkbench analysis={analysis as AudioLocalAnalysis | undefined} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onAnalysisChange={onAnalysisChange} onClear={onClear} />;
+  if (mode === "cryptanalysis") return <CryptaWorkbench parameters={parameters} flagPrefixes={flagPrefixes} flagCaseSensitive={flagCaseSensitive} flagEnabled={flagEnabled} onChange={onChange} onClear={onClear} />;
   const meta = MODE_META[mode] ?? MODE_META.image;
   const fileName = String(parameters.fileName ?? "");
   const dataUrl = String(parameters.dataUrl ?? "");

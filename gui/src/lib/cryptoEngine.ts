@@ -360,3 +360,8 @@ export async function processCrypto(mode: string, input: string, options: Crypto
 
   throw new Error("未知 Crypto 模块");
 }
+
+// ── 自动分析 re-exports ──
+export { analyzeCodec as analyzeAuto } from "./codecPipeline";
+export type { CodecReport, CodecOptions, CodecProgress, CodecFinding, CodecCandidate } from "./codecTypes";
+export { DEFAULT_CODEC_OPTIONS } from "./codecTypes";

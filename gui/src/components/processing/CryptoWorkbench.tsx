@@ -1,7 +1,7 @@
 import { ArrowLeftRight, Copy, FileUp, Play, RotateCcw, ScanSearch } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ToolParameters } from "../../lib/commandBuilder";
-import { CODEC_GROUPS, CODEC_LABELS, decodeCandidates, processCrypto, type CryptoCodec, type CryptoOptions } from "../../lib/cryptoEngine";
+import { analyzeAuto, CODEC_GROUPS, CODEC_LABELS, decodeCandidates, DEFAULT_CODEC_OPTIONS, processCrypto, type CodecReport, type CryptoCodec } from "../../lib/cryptoEngine";
 
 interface CryptoWorkbenchProps {
   mode: string;
@@ -17,6 +17,7 @@ const MODE_META: Record<string, { title: string; description: string }> = {
   encoding: { title: "编码转换", description: "支持 11 种常用编码，并自动识别最多三层嵌套内容" },
   hash: { title: "哈希计算", description: "生成 SHA 系列消息摘要" },
   xor: { title: "异或分析", description: "使用循环密钥处理文本并选择输出格式" },
+  auto: { title: "自动分析", description: "自动识别编码/密码类型，执行全管线分析并提取 Flag" },
 };
 
 function Segmented({ value, options, onChange }: { value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
@@ -32,6 +33,8 @@ function HighlightedValue({ value, flags }: { value: string; flags: string[] }) 
 export function CryptoWorkbench({ mode, parameters, flagPrefixes = ["flag", "CTF"], flagCaseSensitive = false, flagEnabled = true, onChange, onClear }: CryptoWorkbenchProps) {
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
+  const [autoReport, setAutoReport] = useState<CodecReport | null>(null);
+  const [autoRunning, setAutoRunning] = useState(false);
   const input = String(parameters.input ?? "");
   const output = String(parameters.output ?? "");
   const codec = String(parameters.codec ?? "base64") as CryptoCodec;
@@ -69,13 +72,32 @@ export function CryptoWorkbench({ mode, parameters, flagPrefixes = ["flag", "CTF
     onChange("fileName", file.name);
   };
 
+  const runAuto = async () => {
+    setAutoRunning(true);
+    setError("");
+    setAutoReport(null);
+    try {
+      const report = await analyzeAuto(input, flagEnabled ? flagPrefixes : [], flagCaseSensitive, DEFAULT_CODEC_OPTIONS, new AbortController().signal);
+      setAutoReport(report);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "自动分析失败");
+    } finally {
+      setAutoRunning(false);
+    }
+  };
+
+  const isAuto = mode === "auto";
+
   return (
     <section className="local-workbench crypto-workbench">
       <div className="local-tool-strip">
         <div><span>Crypto / {meta.title}</span><strong>{meta.description}</strong></div>
         <div className="local-tool-actions">
           <button type="button" className="secondary-action" onClick={onClear}><RotateCcw size={14} />清空</button>
-          <button type="button" className="run-action" disabled={!input || running} onClick={() => void run()}><Play size={14} />{running ? "处理中" : "处理"}</button>
+          {isAuto
+            ? <button type="button" className="run-action" disabled={!input || autoRunning} onClick={() => void runAuto()}><Play size={14} />{autoRunning ? "分析中" : "开始分析"}</button>
+            : <button type="button" className="run-action" disabled={!input || running} onClick={() => void run()}><Play size={14} />{running ? "处理中" : "处理"}</button>
+          }
         </div>
       </div>
 
@@ -112,6 +134,16 @@ export function CryptoWorkbench({ mode, parameters, flagPrefixes = ["flag", "CTF
         <div className="decode-results">
           {candidates.length ? candidates.map((candidate) => <article className={candidate.flags.length ? "decode-result decode-result-flag" : "decode-result"} key={`${candidate.path.join("-")}-${candidate.value}`}>
             <div><strong>{candidate.path.join(" → ")}</strong><span>{candidate.depth} 层</span>{candidate.flags.length > 0 && <mark>Flag</mark>}</div>
+            <pre><HighlightedValue value={candidate.value} flags={candidate.flags} /></pre>
+          </article>) : <div className="decode-empty">未识别到可读的编码结果</div>}
+        </div>
+      </section>}
+
+      {isAuto && autoReport && <section className="auto-decode-panel">
+        <header><div><ScanSearch size={14} /><strong>自动分析结果</strong><span>{autoReport.findings.length} 个发现，{autoReport.candidates.length} 个候选</span></div></header>
+        <div className="decode-results">
+          {autoReport.candidates.length ? autoReport.candidates.slice(0, 50).map((candidate) => <article className={candidate.flags.length ? "decode-result decode-result-flag" : "decode-result"} key={candidate.id}>
+            <div><strong>{candidate.label}</strong><span>{candidate.source}</span>{candidate.flags.length > 0 && <mark>Flag</mark>}</div>
             <pre><HighlightedValue value={candidate.value} flags={candidate.flags} /></pre>
           </article>) : <div className="decode-empty">未识别到可读的编码结果</div>}
         </div>

@@ -195,7 +195,41 @@ export async function analyzeStego(input: StegoAnalysisInput, options: StegoOpti
       // Ensure carved files produce findings even when flag isn't in plain text
       if (report.carvedFiles.length > 0) {
         const visibleCarved = report.carvedFiles.filter((f) => f.bytes.length >= 64 || (f.children?.length ?? 0) > 0);
-        if (visibleCarved.length > 0 && !findings.some((f) => f.id?.includes("carved"))) {
+        // Scan carved files' raw bytes for flag patterns
+        const carvedFlags: string[] = [];
+        for (const file of visibleCarved) {
+          const fileText = typeof file.bytes === "object"
+            ? new TextDecoder("utf-8", { fatal: false }).decode(file.bytes.slice(0, 4096))
+            : "";
+          const textFlags = detectFlags(fileText, input.prefixes ?? [], input.caseSensitive ?? false);
+          for (const hit of textFlags) {
+            if (!carvedFlags.includes(hit.text)) carvedFlags.push(hit.text);
+          }
+          // Also search children recursively
+          const scanChildren = (children: readonly any[]) => {
+            for (const child of children) {
+              const childText = typeof child.bytes === "object"
+                ? new TextDecoder("utf-8", { fatal: false }).decode(child.bytes.slice(0, 4096))
+                : "";
+              for (const hit of detectFlags(childText, input.prefixes ?? [], input.caseSensitive ?? false)) {
+                if (!carvedFlags.includes(hit.text)) carvedFlags.push(hit.text);
+              }
+              if (child.children?.length) scanChildren(child.children);
+            }
+          };
+          if (file.children?.length) scanChildren(file.children);
+        }
+        if (carvedFlags.length > 0) {
+          for (const flag of carvedFlags) {
+            findings.push({
+              id: `carved-flag-${findings.length}`,
+              severity: "high",
+              source: "递归雕刻",
+              title: "雕刻发现 Flag",
+              detail: flag,
+            });
+          }
+        } else if (visibleCarved.length > 0 && !findings.some((f) => f.id?.includes("carved"))) {
           findings.push({
             id: `carved-count-${findings.length}`,
             severity: "suspicious",

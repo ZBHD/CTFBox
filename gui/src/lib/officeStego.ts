@@ -1,5 +1,5 @@
 // Office 文档隐写分析：docx/xlsx/pptx ZIP 解包 → XML 分析
-import { decompressSync } from "fflate";
+import { inflateSync } from "fflate";
 import { detectFlags } from "./flagDetector";
 
 export interface OfficeResult {
@@ -51,7 +51,7 @@ function parseZipLocal(bytes: Uint8Array): Map<string, Uint8Array> {
         data = bytes.subarray(dataStart, dataEnd);
       } else if (compression === 8) {
         // ZIP uses raw deflate, not zlib-wrapped
-        data = decompressSync(bytes.subarray(dataStart, dataEnd), new Uint8Array(uncompSize));
+        data = inflateSync(bytes.subarray(dataStart, dataEnd), new Uint8Array(uncompSize));
       } else {
         data = bytes.subarray(dataStart, dataEnd);
       }

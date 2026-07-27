@@ -15,7 +15,7 @@ describe("密码分析 — 真实题型验证", () => {
     const input = readFileSync(join(corpus, "rsa/challenge-01-common-modulus.txt"), "utf-8");
     const params = parseRsaPem(input);
     expect(params).not.toBeNull();
-    const lines = input.split("\n").map((l) => l.split(":")[1]).filter(Boolean).map(Number);
+    const lines = input.split("\n").map((l: string) => l.split(":")[1]).filter(Boolean).map(Number);
     const [n, e1, c1, e2, c2] = lines.map(BigInt);
     const result = commonModulusAttack(n, e1, c1, e2, c2);
     expect(result.recovered).toBe(true);

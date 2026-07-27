@@ -120,7 +120,7 @@ export function collectStegoOcrCandidates(
   for (const { file, path } of imageFiles(report.carvedFiles)) {
     add({ id: `carved:${path}`, label: path, mediaType: file.mediaType, bytes: file.bytes });
   }
-  for (const repair of (report.repairs ?? []).filter((candidate) => candidate.confidence === "candidate").slice(0, 4)) addRepair(repair);
+  for (const repair of (report.repairs ?? []).filter((candidate) => candidate.confidence === "candidate").slice(0, 16)) addRepair(repair);
   return candidates;
 }
 
@@ -134,8 +134,17 @@ const OCR_PAYLOAD_FIXES: Array<[RegExp, string]> = [
   [/[¢ç]/g, "c"],     // cent sign → letter c
 ];
 
-/** Apply payload-only character fixes: replace chars only inside {} braces. */
-function applyOcrPayloadFixes(text: string): string {
+/** Apply payload-only character fixes: replace chars only inside {} braces.
+ *  When forceFullText=true, applies fixes to the entire text (for detectFlagLikeTokens
+ *  where O→0 in prefix is acceptable). */
+function applyOcrPayloadFixes(text: string, forceFullText = false): string {
+  if (forceFullText) {
+    let result = text;
+    for (const [pattern, replacement] of OCR_PAYLOAD_FIXES) {
+      result = result.replace(pattern, replacement);
+    }
+    return result;
+  }
   return text.replace(/(\{[^{}]*\})/g, (match) => {
     let fixed = match;
     for (const [pattern, replacement] of OCR_PAYLOAD_FIXES) {
@@ -161,23 +170,31 @@ function applyOcrFixes(text: string): string {
 
 function flagTextVariants(text: string) {
   const fixed = applyOcrFixes(text);
-  const withPayloadFixes = applyOcrPayloadFixes(fixed);
-  const normalized = withPayloadFixes
+  // Step 1: Bracket normalization first (repair OCR-confused brackets before char fixes)
+  const bracketed = fixed
     .replace(/[｛]/g, "{")
     .replace(/[｝]/g, "}")
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*[\(\[]\s*([^{}]{3,512})\}/g, "$1{$2}")
-    .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\s*\{\s*[^{}\r\n]{3,512})[\]\)](?=[ \t]*$)/gm, "$1}");
-  const repaired = normalized.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
+    .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\s*\{\s*[^{}\r\n]{3,512})[\]\)](?=[ \t]*$)/gm, "$1}")
+    // Also handle case where ) or ] replaces } at non-EOL positions in a flag-like pattern
+    .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\{[^{}\r\n]{3,512})[\]\)]/g, "$1}");
+  // Step 2: Payload char fixes on properly-bracketed text (O→0, l→1 inside {})
+  const withPayloadFixes = applyOcrPayloadFixes(bracketed);
+  // Step 3: Whitespace + strip
+  const repaired = withPayloadFixes.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
     `${prefix}{${payload.replace(/\s+/g, "")}}`,
   );
   // Third variant: try full-text char fixes for cases where O→0 in the prefix too
-  // (helps with detectFlagLikeTokens which doesn't require a specific prefix)
-  const fullFixed = applyOcrPayloadFixes(fixed); // only payload fixes, don't break prefix
-  const fullNormalized = fullFixed
+  const fullFixed = applyOcrPayloadFixes(fixed, true); // force fix on full text (including prefix)
+  const fullBracketed = fullFixed
     .replace(/[｛]/g, "{").replace(/[｝]/g, "}")
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*[\(\[]\s*([^{}]{3,512})\}/g, "$1{$2}")
+    .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\{[^{}\r\n]{3,512})[\]\)]/g, "$1}")
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\s*\{\s*[^{}\r\n]{3,512})[\]\)](?=[ \t]*$)/gm, "$1}");
-  return fullNormalized === normalized ? [normalized, repaired] : [normalized, repaired, fullNormalized];
+  const fullRepaired = fullBracketed.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
+    `${prefix}{${payload.replace(/\s+/g, "")}}`,
+  );
+  return fullRepaired === repaired ? [bracketed, repaired] : [bracketed, repaired, fullRepaired];
 }
 
 /** Normalize a flag string for dedup comparison (lowercase, no spaces). */
@@ -278,16 +295,16 @@ export async function recognizeStegoCandidates(
     .map(([key, entries]) => {
       const best = entries.reduce((a, b) => {
         // Prefer complete flags (32-char hex) over short/partial
-        const aScore = scoreFlagCandidate(b.flag, b.source, 0, false, entries.length);
-        const bScore = scoreFlagCandidate(a.flag, a.source, 0, false, entries.length);
-        return aScore > bScore ? a : b;
+        const aScore = scoreFlagCandidate(a.flag, a.source, 0, !a.source.includes("OCR"), entries.length);
+        const bScore = scoreFlagCandidate(b.flag, b.source, 0, !b.source.includes("OCR"), entries.length);
+        return aScore >= bScore ? a : b;
       });
       return { key, best, crossSourceCount: new Set(entries.map((e) => e.source.replace(/OCR · /, ""))).size };
     })
     .sort((a, b) => {
-      const aScore = scoreFlagCandidate(b.best.flag, b.best.source, 0, false, b.crossSourceCount);
-      const bScore = scoreFlagCandidate(a.best.flag, a.best.source, 0, false, a.crossSourceCount);
-      return aScore - bScore; // higher score first
+      const aScore = scoreFlagCandidate(a.best.flag, a.best.source, 0, !a.best.source.includes("OCR"), a.crossSourceCount);
+      const bScore = scoreFlagCandidate(b.best.flag, b.best.source, 0, !b.best.source.includes("OCR"), b.crossSourceCount);
+      return bScore - aScore; // higher score first (descending)
     });
   for (const { key, best, crossSourceCount } of deduped) {
     if (seenNormalized.has(key)) continue;

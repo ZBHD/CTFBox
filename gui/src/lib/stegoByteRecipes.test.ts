@@ -66,6 +66,9 @@ describe("byte recipe analysis", () => {
     expect(result.candidates).toContainEqual(expect.objectContaining({
       value: "ctfshow{ae6e46c48f739b7eb2d1de6e412f839a}",
     }));
+    expect(result.candidates.filter((candidate) => candidate.confidence === "high").map((candidate) => candidate.value)).toEqual([
+      "ctfshow{ae6e46c48f739b7eb2d1de6e412f839a}",
+    ]);
   });
 
   corpusIt("renders marker matrices from misc41", () => {

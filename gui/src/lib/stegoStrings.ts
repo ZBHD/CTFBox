@@ -18,9 +18,14 @@ function probableFlags(value: string) {
 }
 
 function flagsIn(value: string, options: StegoStringOptions) {
+  const configured = detectFlags(value, options.prefixes, options.caseSensitive).map((hit) => hit.text);
+  const normalize = (flag: string) => options.caseSensitive ? flag : flag.toLocaleLowerCase();
+  const inferred = probableFlags(value).filter((candidate) => !configured.some((flag) => (
+    normalize(candidate) !== normalize(flag) && normalize(candidate).endsWith(normalize(flag))
+  )));
   return [...new Set([
-    ...detectFlags(value, options.prefixes, options.caseSensitive).map((hit) => hit.text),
-    ...probableFlags(value),
+    ...configured,
+    ...inferred,
   ])];
 }
 

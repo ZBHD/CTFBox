@@ -71,4 +71,16 @@ describe("stego string extraction", () => {
     }));
     expect(result.findings.some((finding) => finding.severity === "high")).toBe(false);
   });
+
+  it("prefers a configured Flag suffix over a noisy longer prefix", () => {
+    const expected = "ctfshow{fbe7bb657397e6e0a6adea3e40265425}";
+    const result = extractStegoStrings(encoder.encode(`noise\tectfshow{fbe7bb657397e6e0a6adea3e40265425}`), {
+      minimumLength: 4,
+      prefixes: ["ctfshow"],
+      caseSensitive: false,
+    });
+
+    expect(result.findings.map((finding) => finding.detail)).toEqual([expected]);
+    expect(result.hits.flatMap((hit) => hit.flags)).not.toContain(`e${expected}`);
+  });
 });

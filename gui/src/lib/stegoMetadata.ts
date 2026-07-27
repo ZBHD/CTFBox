@@ -362,6 +362,7 @@ function appendMetadataFlags(
   );
   const middleValues = unique(middle).slice(0, 24);
   const endingValues = unique(endings).slice(0, 24);
+  const combinationStart = findings.length;
 
   for (const start of starts.slice(0, 16)) {
     const opening = start.value.indexOf("{");
@@ -385,6 +386,16 @@ function appendMetadataFlags(
           addFinding("元数据组合发现 Flag", value, start.offset);
         }
       }
+    }
+  }
+  const combinationFindings = findings.slice(combinationStart)
+    .filter((finding) => finding.title === "元数据组合发现 Flag");
+  const completeHex = combinationFindings.filter((finding) =>
+    /^[A-Za-z][A-Za-z0-9_-]{1,31}\{[0-9a-fA-F]{32}\}$/.test(finding.detail),
+  );
+  if (completeHex.length > 0) {
+    for (const finding of combinationFindings) {
+      if (!completeHex.includes(finding)) finding.severity = "suspicious";
     }
   }
 }

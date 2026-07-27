@@ -1,5 +1,27 @@
-import BPGDecoder from "bpg-decoder/bpgdec.js";
 import type { StegoPixelSource } from "./stegoTypes";
+
+interface LegacyBpgImageData {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
+interface LegacyBpgDecoder {
+  imageData: LegacyBpgImageData | null;
+  _onload(request: { response: ArrayBuffer }): void;
+}
+
+type LegacyBpgDecoderConstructor = new (context: {
+  createImageData(width: number, height: number): LegacyBpgImageData;
+}) => LegacyBpgDecoder;
+
+function bpgDecoderConstructor() {
+  const constructor = (globalThis as typeof globalThis & {
+    CTFBoxBPGDecoder?: LegacyBpgDecoderConstructor;
+  }).CTFBoxBPGDecoder;
+  if (!constructor) throw new Error("BPG 解码组件未加载");
+  return constructor;
+}
 
 const BPG_MAGIC = [0x42, 0x50, 0x47, 0xfb] as const;
 const MAX_BPG_BYTES = 64 * 1024 * 1024;
@@ -39,6 +61,7 @@ export function readBpgDimensions(bytes: Uint8Array) {
 export function decodeBpgPixels(bytes: Uint8Array): StegoPixelSource {
   const expected = readBpgDimensions(bytes);
   let decodedFrames = 0;
+  const BPGDecoder = bpgDecoderConstructor();
   const decoder = new BPGDecoder({
     createImageData(width, height) {
       decodedFrames += 1;

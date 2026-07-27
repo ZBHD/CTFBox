@@ -57,6 +57,17 @@ describe("recursive full-file carving", () => {
 
     expect(flatten(result.files).some((file) => file.warning?.includes("限制"))).toBe(true);
   });
+
+  it("reports a recognized but corrupted LZMA stream instead of silently discarding it", async () => {
+    const corrupted = Uint8Array.of(
+      0x5d, 0x00, 0x00, 0x80, 0x00,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0x00, 0x01, 0x02, 0x03,
+    );
+    const result = await scanEmbeddedContent(corrupted, { prefixes: ["ctfshow"] });
+
+    expect(flatten(result.files).some((file) => file.warning?.includes("LZMA 解压失败"))).toBe(true);
+  });
 });
 
 const corpus = "D:\\Projects\\MiscTest";

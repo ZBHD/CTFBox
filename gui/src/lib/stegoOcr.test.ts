@@ -12,6 +12,8 @@ function report(): StegoReport {
     visuals: [
       { id: "fft", label: "FFT", width: 1, height: 1, pixels: Uint8ClampedArray.of(255, 255, 255, 255) },
       { id: "apng-frame-004", label: "APNG 异常帧 4", width: 1, height: 1, pixels: Uint8ClampedArray.of(0, 0, 0, 255) },
+      { id: "marker-f001-transposed", label: "F0 01 标记矩阵转置", width: 1, height: 1, pixels: Uint8ClampedArray.of(0, 0, 0, 255) },
+      { id: "gif-offset-scatter", label: "GIF 帧偏移坐标", width: 1, height: 1, pixels: Uint8ClampedArray.of(0, 0, 0, 255) },
     ],
     carvedFiles: [
       { name: "payload.zip", mediaType: "application/zip", offset: 10, bytes: Uint8Array.of(1), children: [
@@ -25,10 +27,12 @@ function report(): StegoReport {
 }
 
 describe("stego OCR", () => {
-  it("collects only high-value image candidates from animations, repairs and nested carving", () => {
+  it("collects high-value coordinate, marker, animation, repair and nested carving images", () => {
     const candidates = collectStegoOcrCandidates(report());
 
     expect(candidates.map((candidate) => candidate.id)).toEqual([
+      "visual:gif-offset-scatter",
+      "visual:marker-f001-transposed",
       "visual:apng-frame-004",
       "repair:repair",
       "carved:payload.zip/hidden.jpg",
@@ -71,8 +75,8 @@ describe("stego OCR", () => {
       new AbortController().signal,
     );
 
-    expect(recognize).toHaveBeenCalledTimes(3);
-    expect(result.results[0]).toMatchObject({ sourceId: "visual:apng-frame-004", confidence: 87, flags: ["ctfshow{ocr_123}"] });
+    expect(recognize).toHaveBeenCalledTimes(5);
+    expect(result.results[0]).toMatchObject({ sourceId: "visual:gif-offset-scatter", confidence: 87, flags: ["ctfshow{ocr_123}"] });
     expect(result.findings).toContainEqual(expect.objectContaining({ title: "OCR 发现 Flag", detail: "ctfshow{ocr_123}" }));
   });
 
@@ -126,6 +130,186 @@ describe("stego OCR", () => {
     // Payload fixes applied: O→0, l→1 inside {}
     // 'OOl_lOOks_fake' → '001_100ks_fake' (both l's in OOl and lOOks get →1)
     expect(allFlags).toContain("ctfsh0w{001_100ks_fake}");
+  });
+
+  it("normalizes a fully parenthesized complete hexadecimal Flag", async () => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfshow(0123456789abcdef0123456789abcdef)", confidence: 52 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual(["ctfshow{0123456789abcdef0123456789abcdef}"]);
+  });
+
+  it("repairs a missing closing brace and removes an overlapping duplicate glyph", async () => {
+    const expected = "ctfshow{0123456789abcdef0123456789abcdef}";
+    const text = "ctfshow{00123456789abcdef0123456789abcdef";
+    const symbols = [...text].map((symbol, index) => ({
+      text: symbol,
+      confidence: 98,
+      bbox: { x0: index * 10, y0: 0, x1: index * 10 + 8, y1: 20 },
+    }));
+    const duplicateIndex = text.indexOf("00");
+    symbols[duplicateIndex].bbox.x1 = symbols[duplicateIndex + 1].bbox.x1 - 1;
+
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text, confidence: 60, symbols }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual([expected]);
+  });
+
+  it("repairs a closing brace recognized as a trailing hexadecimal glyph", async () => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfshow{ce528f767fc465b8787cdb936363e6943", confidence: 64 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual(["ctfshow{ce528f767fc465b8787cdb936363e694}"]);
+  });
+
+  it("keeps bounded hexadecimal alternatives after explicit OCR confusion evidence", async () => {
+    const expected = "ctfshow{dbf7d3f84b0125e833dfd3c80820a129}";
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfshow{dbf7d3184b012Se833dfd3c80820a129", confidence: 64 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toContain(expected);
+    expect(result.results[0].flags.length).toBeLessThanOrEqual(8);
+  });
+
+  it("repairs hexadecimal confusions after bracket normalization and aligns a one-glyph OCR prefix", async () => {
+    const expected = "ctfshow{dbf7d3f84b0125e833dfd3c80820a129}";
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctishow{dbf7d3184b012Se833dfd3c80820a129)", confidence: 0 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toContain(expected);
+  });
+
+  it("repairs a segmented hexadecimal Flag from stacked animation frames", async () => {
+    const expected = "ctfshow{2056782cd57b13261dcbbe3d6eecda17}";
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfshow({\n\n2056782c\n\nd57b1326\n\n1dcbbe3d\n\n6eecdal?}", confidence: 73 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual([expected]);
+  });
+
+  it("keeps only the corrected complete hex Flag from one OCR recognition", async () => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfshow{aade771916df7cde3009c0e631f99l0d}", confidence: 64 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual(["ctfshow{aade771916df7cde3009c0e631f9910d}"]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual(["ctfshow{aade771916df7cde3009c0e631f9910d}"]);
+  });
+
+  it.each([
+    ["ctfshow{0O123456789abcdef0123456789abcdef}", "ctfshow{0123456789abcdef0123456789abcdef}"],
+    ["ctfshow{012345¢6789abcdef0123456789abcdef}", "ctfshow{0123456789abcdef0123456789abcdef}"],
+    ["ctfshow{fedcbal10fedcba98fedcba10fedcba98}", "ctfshow{fedcba10fedcba98fedcba10fedcba98}"],
+    ["ctfshow{abcdefl/10123456789abcdef01234567}", "ctfshow{abcdef110123456789abcdef01234567}"],
+  ])("deletes one duplicated OCR confusion character from a 33-character payload", async (recognized, expected) => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: recognized, confidence: 60 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual([expected]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual([expected]);
+  });
+
+  it("uses overlapping OCR symbol boxes to remove the duplicated glyph", async () => {
+    const text = "ctfshow{03070al10ec3a3282bale352f4e07b0a9}";
+    const symbols = [...text].map((symbol, index) => ({
+      text: symbol,
+      confidence: 98,
+      bbox: { x0: index * 10, y0: 0, x1: index * 10 + 8, y1: 20 },
+    }));
+    const duplicatedIndex = text.indexOf("l");
+    symbols[duplicatedIndex].bbox.x1 = symbols[duplicatedIndex + 1].bbox.x1 - 1;
+
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text, confidence: 56, symbols }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual(["ctfshow{03070a10ec3a3282ba1e352f4e07b0a9}"]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual(["ctfshow{03070a10ec3a3282ba1e352f4e07b0a9}"]);
+  });
+
+  it("does not apply symbol offsets after whitespace compaction changes text length", async () => {
+    const suffix = "0".repeat(31);
+    const text = `ctfshow {lO${suffix}}`;
+    const symbols = [...text].map((symbol, index) => ({
+      text: symbol,
+      confidence: 98,
+      bbox: { x0: index * 10, y0: 0, x1: index * 10 + 8, y1: 20 },
+    }));
+    const duplicatedIndex = text.indexOf("l");
+    symbols[duplicatedIndex].bbox.x1 = symbols[duplicatedIndex + 1].bbox.x1 - 1;
+
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text, confidence: 56, symbols }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual([
+      `ctfshow{${"0".repeat(32)}}`,
+      `ctfshow{1${suffix}}`,
+    ]);
+  });
+
+  it("reserves OCR capacity for carved images when marker matrices are numerous", () => {
+    const crowded = report();
+    crowded.visuals = Array.from({ length: 24 }, (_, index) => ({
+      id: `marker-f001-w${index + 8}-transposed`,
+      label: `标记矩阵 ${index}`,
+      width: 1,
+      height: 1,
+      pixels: Uint8ClampedArray.of(index, index, index, 255),
+    }));
+
+    const candidates = collectStegoOcrCandidates(crowded, { maximumCandidates: 8 });
+
+    expect(candidates).toContainEqual(expect.objectContaining({ id: "carved:payload.zip/hidden.jpg" }));
+    expect(candidates.filter((candidate) => candidate.id.startsWith("visual:marker-")).length).toBeLessThanOrEqual(6);
   });
 
   it("stops before recognition when cancellation is already requested", async () => {

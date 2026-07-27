@@ -1,3 +1,7 @@
+// @ts-expect-error Vitest runs in Node; the renderer tsconfig intentionally omits Node types.
+import { existsSync, readFileSync } from "node:fs";
+// @ts-expect-error Vitest runs in Node; the renderer tsconfig intentionally omits Node types.
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { analyzeStego, DEFAULT_STEGO_OPTIONS } from "./stegoAnalyzer";
 import type { StegoPixelSource } from "./stegoTypes";
@@ -7,6 +11,9 @@ const pixels: StegoPixelSource = {
   height: 8,
   rgba: Uint8Array.from({ length: 8 * 8 * 4 }, (_, index) => index % 4 === 3 ? 255 : (Math.floor(index / 4) % 2) * 255),
 };
+
+const corpus = "D:\\Projects\\MiscTest";
+const corpusIt = existsSync(corpus) ? it : it.skip;
 
 describe("combined stego analyzer", () => {
   it("runs enabled stages in order and combines their reports", async () => {
@@ -49,5 +56,20 @@ describe("combined stego analyzer", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(analyzeStego({ fileName: "sample.bin", bytes: new Uint8Array(128), pixels }, DEFAULT_STEGO_OPTIONS, { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  corpusIt("reports the LZMA Flag from misc16 without a recursive-carving stage error", async () => {
+    const report = await analyzeStego({
+      fileName: "misc16.png",
+      bytes: new Uint8Array(readFileSync(join(corpus, "misc16.png"))),
+      prefixes: ["ctfshow"],
+      caseSensitive: false,
+    }, DEFAULT_STEGO_OPTIONS, { signal: new AbortController().signal });
+
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      severity: "high",
+      detail: "ctfshow{a7e32f131c011290a62476ae77190b52}",
+    }));
+    expect(report.findings).not.toContainEqual(expect.objectContaining({ title: "递归雕刻分析未完成" }));
   });
 });

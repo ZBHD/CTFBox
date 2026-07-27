@@ -135,24 +135,13 @@ async function decodeBzip2(bytes: Uint8Array, maximum: number) {
 
 async function decodeLzma(bytes: Uint8Array, maximum: number) {
   if (maximum < 1) throw new Error("解压输出超过限制");
-  const imported = await import("lzma-purejs");
-  const lzma = imported.default;
-  const output = new Uint8Array(maximum);
-  let position = 0;
-  const stream = {
-    writeByte(byte: number) {
-      if (position >= output.length) throw new Error(`解压输出超过限制 ${maximum} 字节`);
-      output[position++] = byte;
-    },
-    write(buffer: Uint8Array, offset: number, length: number) {
-      if (position + length > output.length) throw new Error(`解压输出超过限制 ${maximum} 字节`);
-      output.set(buffer.subarray(offset, offset + length), position);
-      position += length;
-      return length;
-    },
-  };
-  lzma.decompressFile(bytes, stream);
-  return output.slice(0, position);
+  const imported = await import("lzma/src/lzma-d.js");
+  const decoded = imported.default.LZMA.decompress(bytes);
+  const output = typeof decoded === "string"
+    ? new TextEncoder().encode(decoded)
+    : Uint8Array.from(decoded, (byte) => byte & 0xff);
+  if (output.length > maximum) throw new Error(`解压输出超过限制 ${maximum} 字节`);
+  return output;
 }
 
 function isZlibHeader(bytes: Uint8Array, offset: number) {
@@ -329,8 +318,8 @@ async function scanLevel(
       const file = derivedFile("application/x-lzma", offset, compressed.slice(), decoded);
       file.children = await scanLevel(decoded, limits, budget, depth + 1, true);
       add(file);
-    } catch {
-      // LZMA-Alone has no fixed magic; silently discard failed heuristic candidates.
+    } catch (error) {
+      add(warning(embeddedName(offset, "lzma-warning.txt"), `LZMA 解压失败或触发限制：${error instanceof Error ? error.message : String(error)}`, offset));
     }
   }
   return files;

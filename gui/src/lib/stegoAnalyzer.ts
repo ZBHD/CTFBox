@@ -192,6 +192,19 @@ export async function analyzeStego(input: StegoAnalysisInput, options: StegoOpti
           }
         }
       }
+      // Ensure carved files produce findings even when flag isn't in plain text
+      if (report.carvedFiles.length > 0) {
+        const visibleCarved = report.carvedFiles.filter((f) => f.bytes.length >= 64 || (f.children?.length ?? 0) > 0);
+        if (visibleCarved.length > 0 && !findings.some((f) => f.id?.includes("carved"))) {
+          findings.push({
+            id: `carved-count-${findings.length}`,
+            severity: "suspicious",
+            source: "递归雕刻",
+            title: `雕刻出 ${visibleCarved.length} 个嵌入文件`,
+            detail: visibleCarved.slice(0, 5).map((f) => `${f.name} (${f.bytes.length}B)`).join(" · "),
+          });
+        }
+      }
     } catch (error) {
       findings.push(failure("递归雕刻", error));
     }

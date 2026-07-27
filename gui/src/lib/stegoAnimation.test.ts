@@ -80,13 +80,17 @@ describe("animation frame analysis", () => {
       "gif-frame-031.png",
       "gif-frame-034.png",
     ]);
-    expect(result.visuals.map((visual) => visual.id)).toEqual([
-      "gif-frame-009",
-      "gif-frame-014",
-      "gif-frame-021",
-      "gif-frame-031",
-      "gif-frame-034",
-    ]);
+    const visualIds = result.visuals.map((visual) => visual.id);
+    expect(visualIds).toContain("gif-frame-009");
+    expect(visualIds).toContain("gif-frame-014");
+    expect(visualIds).toContain("gif-frame-021");
+    expect(visualIds).toContain("gif-frame-031");
+    expect(visualIds).toContain("gif-frame-034");
+    expect(visualIds).toContain("animation-stitch-all");
+    // Verify stitch visual has correct dimensions
+    const stitch = result.visuals.find((v) => v.id === "animation-stitch-all")!;
+    expect(stitch.height).toBeGreaterThan(1);
+    expect(stitch.pixels.length).toBe(stitch.width * stitch.height * 4);
   });
 
   corpusIt("selects and exports the verified hidden APNG frames from misc38", () => {

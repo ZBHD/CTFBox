@@ -222,5 +222,25 @@ export function analyzeAnimationFrames(bytes: Uint8Array, options: AnimationAnal
     title: `筛出 ${selected.length} 个像素统计异常帧`,
     detail: selected.map((index) => String(index + 1)).join("、"),
   }];
+
+  // Stitch selected frames vertically for unified OCR
+  if (selected.length >= 2) {
+    const stitchHeight = animation.height * selected.length;
+    const stitchPixels = new Uint8ClampedArray(animation.width * stitchHeight * 4);
+    for (let fi = 0; fi < selected.length; fi++) {
+      const frameIndex = selected[fi];
+      const srcPixels = animation.frames[frameIndex];
+      stitchPixels.set(srcPixels, fi * animation.width * animation.height * 4);
+    }
+    visuals.push({
+      id: "animation-stitch-all",
+      label: `${animation.format === "gif" ? "GIF" : "APNG"} 异常帧拼接 (${selected.length} 帧)`,
+      width: animation.width,
+      height: stitchHeight,
+      pixels: stitchPixels,
+      detail: `按帧序号从上到下拼接 ${selected.length} 个异常帧，供 OCR 按序读取`,
+    });
+  }
+
   return { visuals, files, findings };
 }

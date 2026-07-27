@@ -364,33 +364,68 @@ function analyzeJpeg(bytes: Uint8Array, repairs: StegoRepairCandidate[], maximum
   const report = analyzeJpegDct(bytes);
   if (!report.supported || report.warnings.length === 0 && (report.entropyBytesRemaining ?? 0) <= 64) return;
   const inferred = inferJpegMcuDimensions(bytes, header, report, maximumDimension);
-  const commonHeights = [...new Set([255, 256, 300, 512, 600, 720, 768, 900, 1080].filter((height) => height !== header.height && height <= maximumDimension))];
-  const descriptions: Array<{ width: number; height: number; detail?: string }> = inferred.map((candidate) => ({
-    width: candidate.width,
-    height: candidate.height,
-    detail: `完整熵流解出 ${candidate.decodedMcus} 个 MCU；MCU 尺寸 ${candidate.mcuWidth} x ${candidate.mcuHeight}，候选尺寸与 MCU 网格完全一致`,
-  }));
-  descriptions.push(...commonHeights.map((height) => ({ width: header.width, height })));
-  const widthCandidates = Array.from({ length: Math.min(129, maximumDimension - header.width + 1) }, (_, delta) => header.width + delta)
-    .sort((left, right) => roundness(left, false) - roundness(right, false) || Math.abs(left - header.width) - Math.abs(right - header.width))
-    .slice(0, 40);
-  for (const height of commonHeights) {
-    for (const width of widthCandidates) descriptions.push({ width, height });
-  }
-  for (const candidate of descriptions) {
+  // Common candidate heights including well-known values and heights near the declared height
+  const commonHeights = [...new Set([
+    255, 256, 300, 512, 600, 720, 768, 900, 1080,
+    header.height + 1, header.height + 2, // offset by 1-2 (common dimension watermark)
+    128, 129, // common small heights
+  ].filter((height) => height !== header.height && height > 0 && height <= maximumDimension))];
+
+  // Phase 1: MCU-inferred dimensions (strongest evidence)
+  for (const candidate of inferred.slice(0, 16)) {
     if (repairs.length >= maximumCandidates) break;
     const repaired = bytes.slice();
     writeU16Be(repaired, header.offset + 5, candidate.height);
     writeU16Be(repaired, header.offset + 7, candidate.width);
     addRepair(repairs, {
       format: "JPEG",
-      label: `SOF 容错预览候选 ${candidate.width} x ${candidate.height}`,
+      label: `SOF MCU 推演 ${candidate.width} x ${candidate.height}`,
       width: candidate.width,
       height: candidate.height,
       confidence: "candidate",
-      detail: candidate.detail ?? `原尺寸 ${header.width} x ${header.height} 的熵编码未按声明尺寸完整结束；按常见边界高度和邻近行宽生成候选，需缩略图网格确认`,
+      detail: `完整熵流解出 ${candidate.decodedMcus} 个 MCU；MCU 尺寸 ${candidate.mcuWidth} x ${candidate.mcuHeight}`,
       bytes: repaired,
     }, maximumCandidates);
+  }
+
+  // Phase 2: Same declared width, common heights only (most frequent real case)
+  for (const height of commonHeights) {
+    if (repairs.length >= maximumCandidates) break;
+    const repaired = bytes.slice();
+    writeU16Be(repaired, header.offset + 5, height);
+    addRepair(repairs, {
+      format: "JPEG",
+      label: `高度修正 ${header.width} x ${height}`,
+      width: header.width,
+      height,
+      confidence: "candidate",
+      detail: `原尺寸 ${header.width} x ${header.height}；仅修改高度为常见值 ${height}`,
+      bytes: repaired,
+    }, maximumCandidates);
+  }
+
+  // Phase 3: Brute-force enumeration (fill remaining budget)
+  if (repairs.length < maximumCandidates) {
+    const remaining = maximumCandidates - repairs.length;
+    const widthCandidates = Array.from({ length: Math.min(129, maximumDimension - header.width + 1) }, (_, delta) => header.width + delta)
+      .sort((left, right) => roundness(left, false) - roundness(right, false) || Math.abs(left - header.width) - Math.abs(right - header.width))
+      .slice(0, 40);
+    for (const height of commonHeights) {
+      for (const width of widthCandidates) {
+        if (repairs.length >= maximumCandidates) break;
+        const repaired = bytes.slice();
+        writeU16Be(repaired, header.offset + 5, height);
+        writeU16Be(repaired, header.offset + 7, width);
+        addRepair(repairs, {
+          format: "JPEG",
+          label: `SOF 枚举 ${width} x ${height}`,
+          width, height,
+          confidence: "candidate",
+          detail: `原尺寸 ${header.width} x ${header.height}`,
+          bytes: repaired,
+        }, maximumCandidates);
+      }
+    }
   }
 }
 
@@ -615,7 +650,7 @@ export function analyzeImageDimensions(bytes: Uint8Array, options: DimensionAnal
   const repairs: StegoRepairCandidate[] = [];
   if (startsWith(bytes, [137, 80, 78, 71, 13, 10, 26, 10])) analyzePng(bytes, repairs, maximumDimension, maximumCandidates);
   else if (bytes[0] === 0x42 && bytes[1] === 0x4d) analyzeBmp(bytes, repairs, maximumDimension, maximumCandidates);
-  else if (startsWith(bytes, [0xff, 0xd8])) analyzeJpeg(bytes, repairs, maximumDimension, maximumCandidates);
+  else if (startsWith(bytes, [0xff, 0xd8])) analyzeJpeg(bytes, repairs, maximumDimension, Math.min(48, maximumCandidates));
   else analyzeGif(bytes, repairs, maximumDimension, maximumCandidates);
   const findings: StegoFinding[] = repairs.length > 0 ? [{
     id: "dimension-repairs",

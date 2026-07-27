@@ -29,6 +29,7 @@ export function offlineOcrAssetUrls(baseUrl: string) {
 
 export class OfflineStegoOcrEngine {
   private workerPromise?: Promise<OcrWorkerLike>;
+  private blockWorkerPromise?: Promise<OcrWorkerLike>;
 
   constructor(
     private readonly baseUrl = document.baseURI,
@@ -52,6 +53,24 @@ export class OfflineStegoOcrEngine {
     return this.workerPromise;
   }
 
+  private blockWorker() {
+    this.blockWorkerPromise ??= this.factory("eng", OEM.LSTM_ONLY, {
+      ...offlineOcrAssetUrls(this.baseUrl),
+      workerBlobURL: false,
+      gzip: true,
+      legacyCore: false,
+      legacyLang: false,
+    }).then(async (worker) => {
+      await worker.setParameters({
+        tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
+        preserve_interword_spaces: "1",
+        tessedit_char_whitelist: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-!@#$%^&*()[]<>/?.,:;\"' ",
+      });
+      return worker;
+    });
+    return this.blockWorkerPromise;
+  }
+
   async recognize(candidate: StegoOcrCandidate, signal: AbortSignal): Promise<StegoOcrRecognition> {
     if (signal.aborted) throw abortError();
     const worker = await this.worker();
@@ -61,6 +80,16 @@ export class OfflineStegoOcrEngine {
     try {
       const result = await worker.recognize(new Blob([candidate.bytes.slice().buffer as ArrayBuffer], { type: candidate.mediaType }));
       if (signal.aborted) throw abortError();
+
+      // If low confidence or empty text, retry with SINGLE_BLOCK + whitelist
+      if (result.data.confidence < 40 || (result.data.text ?? "").trim().length === 0) {
+        const blockWorker = await this.blockWorker();
+        const blockResult = await blockWorker.recognize(new Blob([candidate.bytes.slice().buffer as ArrayBuffer], { type: candidate.mediaType }));
+        if (blockResult.data.confidence > result.data.confidence) {
+          return { text: blockResult.data.text, confidence: blockResult.data.confidence };
+        }
+      }
+
       return { text: result.data.text, confidence: result.data.confidence };
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -73,6 +102,15 @@ export class OfflineStegoOcrEngine {
     if (!workerPromise) return;
     try {
       const worker = await workerPromise;
+      await worker.terminate();
+    } catch {
+      // A failed or cancelled worker is already unusable.
+    }
+    const blockWorkerPromise = this.blockWorkerPromise;
+    this.blockWorkerPromise = undefined;
+    if (!blockWorkerPromise) return;
+    try {
+      const worker = await blockWorkerPromise;
       await worker.terminate();
     } catch {
       // A failed or cancelled worker is already unusable.

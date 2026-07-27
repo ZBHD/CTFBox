@@ -114,6 +114,20 @@ describe("stego OCR", () => {
     expect(result.findings).toContainEqual(expect.objectContaining({ title: "OCR 发现 Flag" }));
   });
 
+  it("corrects OCR character confusions in payload: O→0, l→1", async () => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfsh0w{OOl_lOOks_fake}", confidence: 55 }),
+      new AbortController().signal,
+    );
+    const allFlags = result.results[0].flags;
+    // Payload fixes applied: O→0, l→1 inside {}
+    // 'OOl_lOOks_fake' → '001_100ks_fake' (both l's in OOl and lOOks get →1)
+    expect(allFlags).toContain("ctfsh0w{001_100ks_fake}");
+  });
+
   it("stops before recognition when cancellation is already requested", async () => {
     const controller = new AbortController();
     controller.abort();

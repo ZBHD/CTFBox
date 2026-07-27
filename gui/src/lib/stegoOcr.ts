@@ -124,8 +124,45 @@ export function collectStegoOcrCandidates(
   return candidates;
 }
 
+// OCR character confusion substitution map — applied only inside flag payloads,
+// NOT to the flag prefix, to avoid breaking configured prefix matches.
+// Only safe substitutions: characters that are virtually never valid in text
+// but commonly confused with their numeric/alphabetic counterpart in OCR.
+const OCR_PAYLOAD_FIXES: Array<[RegExp, string]> = [
+  [/[OＯ]/g, "0"],     // letter O → digit 0 (most common CTF hex confusion)
+  [/[l|ⅠＩ]/g, "1"],   // lowercase L or unicode I → digit 1
+  [/[¢ç]/g, "c"],     // cent sign → letter c
+];
+
+/** Apply payload-only character fixes: replace chars only inside {} braces. */
+function applyOcrPayloadFixes(text: string): string {
+  return text.replace(/(\{[^{}]*\})/g, (match) => {
+    let fixed = match;
+    for (const [pattern, replacement] of OCR_PAYLOAD_FIXES) {
+      fixed = fixed.replace(pattern, replacement);
+    }
+    return fixed;
+  });
+}
+
+// Also apply full-text fixes for non-flag text interpretation
+const OCR_FULL_FIXES: Array<[RegExp, string]> = [
+  [/[：]/g, ":"],
+  [/[；]/g, ";"],
+];
+
+function applyOcrFixes(text: string): string {
+  let result = text;
+  for (const [pattern, replacement] of OCR_FULL_FIXES) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 function flagTextVariants(text: string) {
-  const normalized = text
+  const fixed = applyOcrFixes(text);
+  const withPayloadFixes = applyOcrPayloadFixes(fixed);
+  const normalized = withPayloadFixes
     .replace(/[｛]/g, "{")
     .replace(/[｝]/g, "}")
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*[\(\[]\s*([^{}]{3,512})\}/g, "$1{$2}")
@@ -133,7 +170,14 @@ function flagTextVariants(text: string) {
   const repaired = normalized.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
     `${prefix}{${payload.replace(/\s+/g, "")}}`,
   );
-  return [normalized, repaired];
+  // Third variant: try full-text char fixes for cases where O→0 in the prefix too
+  // (helps with detectFlagLikeTokens which doesn't require a specific prefix)
+  const fullFixed = applyOcrPayloadFixes(fixed); // only payload fixes, don't break prefix
+  const fullNormalized = fullFixed
+    .replace(/[｛]/g, "{").replace(/[｝]/g, "}")
+    .replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*[\(\[]\s*([^{}]{3,512})\}/g, "$1{$2}")
+    .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\s*\{\s*[^{}\r\n]{3,512})[\]\)](?=[ \t]*$)/gm, "$1}");
+  return fullNormalized === normalized ? [normalized, repaired] : [normalized, repaired, fullNormalized];
 }
 
 export async function recognizeStegoCandidates(

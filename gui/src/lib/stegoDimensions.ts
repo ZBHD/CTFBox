@@ -407,6 +407,8 @@ function analyzeJpeg(bytes: Uint8Array, repairs: StegoRepairCandidate[], maximum
   // Phase 3: Brute-force enumeration (fill remaining budget)
   if (repairs.length < maximumCandidates) {
     const remaining = maximumCandidates - repairs.length;
+    // Phase 3: Original brute-force enumeration (fill remaining budget).
+    // Uses roundness-sorted widths × common heights, matching original behavior.
     const widthCandidates = Array.from({ length: Math.min(129, maximumDimension - header.width + 1) }, (_, delta) => header.width + delta)
       .sort((left, right) => roundness(left, false) - roundness(right, false) || Math.abs(left - header.width) - Math.abs(right - header.width))
       .slice(0, 40);
@@ -650,7 +652,7 @@ export function analyzeImageDimensions(bytes: Uint8Array, options: DimensionAnal
   const repairs: StegoRepairCandidate[] = [];
   if (startsWith(bytes, [137, 80, 78, 71, 13, 10, 26, 10])) analyzePng(bytes, repairs, maximumDimension, maximumCandidates);
   else if (bytes[0] === 0x42 && bytes[1] === 0x4d) analyzeBmp(bytes, repairs, maximumDimension, maximumCandidates);
-  else if (startsWith(bytes, [0xff, 0xd8])) analyzeJpeg(bytes, repairs, maximumDimension, Math.min(48, maximumCandidates));
+  else if (startsWith(bytes, [0xff, 0xd8])) analyzeJpeg(bytes, repairs, maximumDimension, Math.min(256, maximumCandidates));
   else analyzeGif(bytes, repairs, maximumDimension, maximumCandidates);
   const findings: StegoFinding[] = repairs.length > 0 ? [{
     id: "dimension-repairs",

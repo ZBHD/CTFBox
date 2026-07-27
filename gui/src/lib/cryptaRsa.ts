@@ -70,15 +70,35 @@ function parseRsaDer(bytes: Uint8Array): RsaParams | null {
 }
 
 function parseRsaHex(text: string): RsaParams | null {
+  // Split by line first to avoid "n:123\ne:456" merging into "n:123e:456"
+  const params: Record<string, bigint> = {};
+  const lines = text.split(/[\r\n]+/);
+  for (const line of lines) {
+    const match = line.match(/^\s*([nNeEdDpPqQ])\s*[=:]\s*(0x[0-9a-fA-F]+|[0-9a-fA-F]+|[0-9]+)\s*$/i);
+    if (match) {
+      const key = match[1].toLowerCase();
+      let raw = match[2];
+      // Detect hex (contains a-f, starts with 0x, or is all hex-looking) vs decimal
+      const isHex = /^0x/i.test(raw) || /[a-fA-F]/.test(raw);
+      const value = isHex ? BigInt(raw.toLowerCase()) : BigInt(raw);
+      if (value > 0n) params[key] = value;
+    }
+  }
+  if (params.n && params.e) {
+    return { n: params.n, e: params.e, d: params.d, p: params.p, q: params.q };
+  }
+  // Fallback: try old split-by-delimiter approach for single-line format
   const parts = text.replace(/\s/g, "").split(/[:,]/);
   const nums: bigint[] = [];
   for (const p of parts) {
     try {
+      const isHexPrefix = /^0x/i.test(p);
       const clean = p.replace(/^0x/i, "");
       if (!/[0-9a-fA-F]/.test(clean) || clean.length > 2048) continue;
-      if (clean.length < 2 && !p.startsWith("0x")) continue; // reject single-char param names
-      const n = BigInt("0x" + clean);
-      if (n > 0n) nums.push(n);
+      if (clean.length < 2 && !isHexPrefix) continue; // reject single-char param names
+      // Detect decimal (pure [0-9]) vs hex (has 0x prefix or af chars)
+      const value = (isHexPrefix || /[a-fA-F]/.test(clean)) ? BigInt("0x" + clean) : BigInt(clean);
+      if (value > 0n) nums.push(value);
     } catch {
       // skip non-numeric
     }

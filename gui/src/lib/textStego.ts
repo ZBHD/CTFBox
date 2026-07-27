@@ -90,7 +90,9 @@ export function extractWhitespaceEncoding(text: string): string {
 
 // ── Trailing whitespace ──
 export function detectTrailingWhitespace(text: string): string[] {
-  const lines = text.split("\n");
+  // Normalize \r\n to \n for cross-platform compatibility
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
   const findings: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const match = lines[i].match(/([ \t]+)$/);
@@ -123,10 +125,8 @@ export function analyzeTextStego(text: string, prefixes: readonly string[], case
     const casePayload = extractCaseEncoding(text);
     if (casePayload) {
       const flags = detectFlags(casePayload, prefixes, caseSensitive).map((h) => h.text);
-      if (flags.length > 0) {
-        candidates.push({ id: "case-payload", source: "大小写编码", value: casePayload, flags });
-        findings.push({ id: "case-detect", severity: "suspicious", source: "文本隐写", title: "字母大小写疑似编码数据", detail: `${alphaOnly.length} 个字母中包含二进制模式` });
-      }
+      candidates.push({ id: "case-payload", source: "大小写编码", value: casePayload, flags });
+      findings.push({ id: "case-detect", severity: "suspicious", source: "文本隐写", title: "字母大小写疑似编码数据", detail: `${alphaOnly.length} 个字母中包含二进制模式` });
     }
   }
 

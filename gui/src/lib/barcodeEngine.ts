@@ -314,6 +314,7 @@ export function identifyBarcode(text: string): BarcodeResult {
   if (/^[0-9]{12,13}$/.test(trimmed)) return { type: "EAN/UPC", detected: true };
   if (/^[0-9]{8}$/.test(trimmed)) return { type: "EAN-8", detected: true };
   if (/^[A-Z0-9*]{6,}$/.test(trimmed) && /[A-Z]/.test(trimmed) && /\*.*\*/.test(trimmed)) return { type: "Code39", detected: true };
+  if (/^[*][A-Z0-9\-.$/+% ]{3,}[*]$/.test(trimmed)) return { type: "Code39", detected: true };
   if (/^[\x00-\x7F]{4,}$/.test(trimmed) && trimmed.length % 2 === 0) return { type: "Code128/DataMatrix 候选", detected: true };
   return { type: "未知", detected: false };
 }

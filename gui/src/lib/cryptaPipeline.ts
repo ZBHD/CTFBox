@@ -1,5 +1,5 @@
 // 密码分析自动编排器
-import { caesarBruteforce, railFenceBruteforce } from "./classicalCipher";
+import { atbashTransform, caesarBruteforce, railFenceBruteforce } from "./classicalCipher";
 import { identifyCipherType } from "./cipherIdentifier";
 import { identifyCryptoInput } from "./cryptaInputDetect";
 import { detectEcb } from "./cryptaAes";
@@ -60,6 +60,9 @@ export async function analyzeCrypto(
     for (const result of caesarBruteforce(input, prefixes, caseSensitive).slice(0, 5)) {
       if (result.text !== input) addCandidate(result.text);
     }
+    // Atbash
+    const atbashed = atbashTransform(input);
+    if (atbashed !== input) addCandidate(atbashed);
     if (input.length <= 200) {
       for (const result of railFenceBruteforce(input, prefixes, caseSensitive).slice(0, 5)) {
         if (result.text !== input) addCandidate(result.text);

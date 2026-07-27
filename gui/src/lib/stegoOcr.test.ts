@@ -128,6 +128,84 @@ describe("stego OCR", () => {
     expect(allFlags).toContain("ctfsh0w{001_100ks_fake}");
   });
 
+  it("keeps only the corrected complete hex Flag from one OCR recognition", async () => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: "ctfshow{aade771916df7cde3009c0e631f99l0d}", confidence: 64 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual(["ctfshow{aade771916df7cde3009c0e631f9910d}"]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual(["ctfshow{aade771916df7cde3009c0e631f9910d}"]);
+  });
+
+  it.each([
+    ["ctfshow{0O123456789abcdef0123456789abcdef}", "ctfshow{0123456789abcdef0123456789abcdef}"],
+    ["ctfshow{012345¢6789abcdef0123456789abcdef}", "ctfshow{0123456789abcdef0123456789abcdef}"],
+    ["ctfshow{fedcbal10fedcba98fedcba10fedcba98}", "ctfshow{fedcba10fedcba98fedcba10fedcba98}"],
+    ["ctfshow{abcdefl/10123456789abcdef01234567}", "ctfshow{abcdef110123456789abcdef01234567}"],
+  ])("deletes one duplicated OCR confusion character from a 33-character payload", async (recognized, expected) => {
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text: recognized, confidence: 60 }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual([expected]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual([expected]);
+  });
+
+  it("uses overlapping OCR symbol boxes to remove the duplicated glyph", async () => {
+    const text = "ctfshow{03070al10ec3a3282bale352f4e07b0a9}";
+    const symbols = [...text].map((symbol, index) => ({
+      text: symbol,
+      confidence: 98,
+      bbox: { x0: index * 10, y0: 0, x1: index * 10 + 8, y1: 20 },
+    }));
+    const duplicatedIndex = text.indexOf("l");
+    symbols[duplicatedIndex].bbox.x1 = symbols[duplicatedIndex + 1].bbox.x1 - 1;
+
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text, confidence: 56, symbols }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual(["ctfshow{03070a10ec3a3282ba1e352f4e07b0a9}"]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual(["ctfshow{03070a10ec3a3282ba1e352f4e07b0a9}"]);
+  });
+
+  it("does not apply symbol offsets after whitespace compaction changes text length", async () => {
+    const suffix = "0".repeat(31);
+    const text = `ctfshow {lO${suffix}}`;
+    const symbols = [...text].map((symbol, index) => ({
+      text: symbol,
+      confidence: 98,
+      bbox: { x0: index * 10, y0: 0, x1: index * 10 + 8, y1: 20 },
+    }));
+    const duplicatedIndex = text.indexOf("l");
+    symbols[duplicatedIndex].bbox.x1 = symbols[duplicatedIndex + 1].bbox.x1 - 1;
+
+    const result = await recognizeStegoCandidates(
+      collectStegoOcrCandidates(report(), { maximumCandidates: 1 }),
+      ["ctfshow"],
+      false,
+      async () => ({ text, confidence: 56, symbols }),
+      new AbortController().signal,
+    );
+
+    expect(result.results[0].flags).toEqual([
+      `ctfshow{${"0".repeat(32)}}`,
+      `ctfshow{1${suffix}}`,
+    ]);
+  });
+
   it("stops before recognition when cancellation is already requested", async () => {
     const controller = new AbortController();
     controller.abort();

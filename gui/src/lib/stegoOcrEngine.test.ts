@@ -47,7 +47,7 @@ describe("offline OCR engine", () => {
       gzip: true,
     }));
     expect(worker.setParameters).toHaveBeenCalledWith(expect.objectContaining({ tessedit_pageseg_mode: PSM.SPARSE_TEXT }));
-    expect(worker.recognize).toHaveBeenCalledWith(expect.any(Blob));
+    expect(worker.recognize).toHaveBeenCalledWith(expect.any(Blob), {}, { text: true, blocks: true });
     // Primary worker has confidence 91 > 40, so block worker should NOT be called
     expect(blockWorker.recognize).not.toHaveBeenCalled();
     expect(result).toEqual({ text: "ctfshow{ocr_engine}", confidence: 91 });
@@ -79,5 +79,37 @@ describe("offline OCR engine", () => {
     expect(blockWorker.recognize).toHaveBeenCalledTimes(1);
     // Block worker has higher confidence (72 > 25) → use its result
     expect(result).toEqual({ text: "ctfshow{block_saved}", confidence: 72 });
+  });
+
+  it("returns OCR symbol geometry for duplicate-glyph recovery", async () => {
+    const worker = {
+      setParameters: vi.fn().mockResolvedValue(undefined),
+      recognize: vi.fn().mockResolvedValue({
+        data: {
+          text: "ctfshow{a1}",
+          confidence: 91,
+          blocks: [{
+            paragraphs: [{
+              lines: [{
+                words: [{
+                  symbols: [{ text: "a", confidence: 97, bbox: { x0: 10, y0: 2, x1: 18, y1: 20 } }],
+                }],
+              }],
+            }],
+          }],
+        },
+      }),
+      terminate: vi.fn().mockResolvedValue(undefined),
+    };
+    const factory = vi.fn().mockResolvedValue(worker);
+    const engine = new OfflineStegoOcrEngine("http://localhost:1420/index.html", factory);
+
+    const result = await engine.recognize(candidate, new AbortController().signal);
+    await engine.dispose();
+
+    expect(worker.recognize).toHaveBeenCalledWith(expect.any(Blob), {}, { text: true, blocks: true });
+    expect(result.symbols).toEqual([
+      { text: "a", confidence: 97, bbox: { x0: 10, y0: 2, x1: 18, y1: 20 } },
+    ]);
   });
 });

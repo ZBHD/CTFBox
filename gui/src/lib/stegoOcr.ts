@@ -13,6 +13,13 @@ export interface StegoOcrCandidate {
 export interface StegoOcrRecognition {
   text: string;
   confidence: number;
+  symbols?: StegoOcrSymbol[];
+}
+
+export interface StegoOcrSymbol {
+  text: string;
+  confidence: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
 }
 
 export interface StegoOcrResult extends StegoOcrRecognition {
@@ -134,6 +141,8 @@ const OCR_PAYLOAD_FIXES: Array<[RegExp, string]> = [
   [/[¢ç]/g, "c"],     // cent sign → letter c
 ];
 
+const OCR_DUPLICATED_PAYLOAD_CHARACTERS = new Set(["O", "Ｏ", "l", "|", "Ⅰ", "Ｉ", "¢", "ç", "/"]);
+
 /** Apply payload-only character fixes: replace chars only inside {} braces.
  *  When forceFullText=true, applies fixes to the entire text (for detectFlagLikeTokens
  *  where O→0 in prefix is acceptable). */
@@ -168,7 +177,67 @@ function applyOcrFixes(text: string): string {
   return result;
 }
 
-function flagTextVariants(text: string) {
+function compactFlagWhitespace(text: string) {
+  return text.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
+    `${prefix}{${payload.replace(/\s+/g, "")}}`,
+  );
+}
+
+function overlappingDuplicateSymbolOffsets(text: string, symbols: readonly StegoOcrSymbol[]) {
+  const aligned: Array<{ symbol: StegoOcrSymbol; offset: number }> = [];
+  let searchStart = 0;
+  for (const symbol of symbols) {
+    const offset = text.indexOf(symbol.text, searchStart);
+    if (offset < 0) continue;
+    aligned.push({ symbol, offset });
+    searchStart = offset + symbol.text.length;
+  }
+  const overlaps = new Set<number>();
+  for (let index = 0; index + 1 < aligned.length; index += 1) {
+    const left = aligned[index];
+    const right = aligned[index + 1];
+    const horizontal = Math.min(left.symbol.bbox.x1, right.symbol.bbox.x1)
+      - Math.max(left.symbol.bbox.x0, right.symbol.bbox.x0);
+    const vertical = Math.min(left.symbol.bbox.y1, right.symbol.bbox.y1)
+      - Math.max(left.symbol.bbox.y0, right.symbol.bbox.y0);
+    const minimumWidth = Math.min(
+      left.symbol.bbox.x1 - left.symbol.bbox.x0,
+      right.symbol.bbox.x1 - right.symbol.bbox.x0,
+    );
+    if (vertical <= 0 || minimumWidth <= 0 || horizontal / minimumWidth < 0.5) continue;
+    if (OCR_DUPLICATED_PAYLOAD_CHARACTERS.has(left.symbol.text)) overlaps.add(left.offset);
+    else if (OCR_DUPLICATED_PAYLOAD_CHARACTERS.has(right.symbol.text)) overlaps.add(right.offset);
+  }
+  return overlaps;
+}
+
+function recoverDuplicatedPayloadCharacters(text: string, symbols: readonly StegoOcrSymbol[] = []) {
+  const recovered: string[] = [];
+  const overlappingOffsets = overlappingDuplicateSymbolOffsets(text, symbols);
+  const pattern = /([A-Za-z][A-Za-z0-9_-]{1,31})\{([^{}\r\n]{33})\}/g;
+  for (const match of text.matchAll(pattern)) {
+    const payload = match[2];
+    if (!payload) continue;
+    const matchRecovered: Array<{ value: string; overlaps: boolean }> = [];
+    for (let index = 0; index < payload.length; index += 1) {
+      if (!OCR_DUPLICATED_PAYLOAD_CHARACTERS.has(payload[index])) continue;
+      const shortened = `${payload.slice(0, index)}${payload.slice(index + 1)}`;
+      const fixed = applyOcrPayloadFixes(`{${shortened}}`).slice(1, -1);
+      if (!/^[0-9a-fA-F]{32}$/.test(fixed)) continue;
+      const start = match.index ?? 0;
+      const payloadOffset = start + match[0].indexOf("{") + 1 + index;
+      matchRecovered.push({
+        value: `${text.slice(0, start)}${match[1]}{${fixed}}${text.slice(start + match[0].length)}`,
+        overlaps: overlappingOffsets.has(payloadOffset),
+      });
+    }
+    const overlapping = matchRecovered.filter((candidate) => candidate.overlaps);
+    recovered.push(...(overlapping.length > 0 ? overlapping : matchRecovered).map((candidate) => candidate.value));
+  }
+  return recovered;
+}
+
+function flagTextVariants(text: string, symbols: readonly StegoOcrSymbol[] = []) {
   const fixed = applyOcrFixes(text);
   // Step 1: Bracket normalization first (repair OCR-confused brackets before char fixes)
   const bracketed = fixed
@@ -178,12 +247,10 @@ function flagTextVariants(text: string) {
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\s*\{\s*[^{}\r\n]{3,512})[\]\)](?=[ \t]*$)/gm, "$1}")
     // Also handle case where ) or ] replaces } at non-EOL positions in a flag-like pattern
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\{[^{}\r\n]{3,512})[\]\)]/g, "$1}");
+  const compacted = compactFlagWhitespace(bracketed);
   // Step 2: Payload char fixes on properly-bracketed text (O→0, l→1 inside {})
-  const withPayloadFixes = applyOcrPayloadFixes(bracketed);
-  // Step 3: Whitespace + strip
-  const repaired = withPayloadFixes.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
-    `${prefix}{${payload.replace(/\s+/g, "")}}`,
-  );
+  const repaired = applyOcrPayloadFixes(compacted);
+  const recovered = recoverDuplicatedPayloadCharacters(compacted, compacted.length === text.length ? symbols : []);
   // Third variant: try full-text char fixes for cases where O→0 in the prefix too
   const fullFixed = applyOcrPayloadFixes(fixed, true); // force fix on full text (including prefix)
   const fullBracketed = fullFixed
@@ -191,10 +258,12 @@ function flagTextVariants(text: string) {
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*[\(\[]\s*([^{}]{3,512})\}/g, "$1{$2}")
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\{[^{}\r\n]{3,512})[\]\)]/g, "$1}")
     .replace(/([A-Za-z][A-Za-z0-9_-]{1,31}\s*\{\s*[^{}\r\n]{3,512})[\]\)](?=[ \t]*$)/gm, "$1}");
-  const fullRepaired = fullBracketed.replace(/([A-Za-z][A-Za-z0-9_-]{1,31})\s*\{\s*([^{}]*?)\s*\}/g, (_match, prefix: string, payload: string) =>
-    `${prefix}{${payload.replace(/\s+/g, "")}}`,
-  );
-  return fullRepaired === repaired ? [bracketed, repaired] : [bracketed, repaired, fullRepaired];
+  const fullRepaired = compactFlagWhitespace(fullBracketed);
+  return [...new Set([bracketed, repaired, fullRepaired, ...recovered])];
+}
+
+function isCompleteHexFlag(flag: string) {
+  return /^[A-Za-z][A-Za-z0-9_-]{1,31}\{[0-9a-fA-F]{32}\}$/.test(flag);
 }
 
 /** Normalize a flag string for dedup comparison (lowercase, no spaces). */
@@ -249,12 +318,12 @@ export async function recognizeStegoCandidates(
     try {
       const recognition = await recognize(candidate, signal);
       if (signal.aborted) throw abortError();
-      const variants = flagTextVariants(recognition.text);
+      const variants = flagTextVariants(recognition.text, recognition.symbols);
       const configuredFlags = variants.flatMap((text) => detectFlags(text, prefixes, caseSensitive).map((hit) => hit.text));
       const keyForFlag = (flag: string) => (caseSensitive ? flag : flag.toLowerCase()).replace(/\s+/g, "");
       const configuredKeys = new Set(configuredFlags.map(keyForFlag));
       const flagKeys = new Set<string>();
-      const flags = [...configuredFlags, ...variants.flatMap(detectFlagLikeTokens)]
+      const detectedFlags = [...configuredFlags, ...variants.flatMap(detectFlagLikeTokens)]
         .sort((left, right) => (left.match(/\s/g)?.length ?? 0) - (right.match(/\s/g)?.length ?? 0))
         .filter((flag) => {
           const key = keyForFlag(flag);
@@ -262,6 +331,8 @@ export async function recognizeStegoCandidates(
           flagKeys.add(key);
           return true;
         });
+      const completeConfiguredFlags = detectedFlags.filter((flag) => configuredKeys.has(keyForFlag(flag)) && isCompleteHexFlag(flag));
+      const flags = completeConfiguredFlags.length > 0 ? completeConfiguredFlags : detectedFlags;
       results.push({
         sourceId: candidate.id,
         sourceLabel: candidate.label,

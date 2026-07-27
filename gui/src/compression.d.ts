@@ -9,15 +9,15 @@ declare module "seek-bzip" {
   export default Bunzip;
 }
 
-declare module "lzma-purejs" {
-  interface OutputStream {
-    writeByte(byte: number): void;
-    write?(buffer: Uint8Array, offset: number, length: number): number;
+declare module "lzma/src/lzma-d.js" {
+  interface LzmaDecoder {
+    decompress(input: Uint8Array): string | number[];
   }
-  interface LzmaApi {
-    decompressFile(input: Uint8Array, output?: OutputStream): Uint8Array | boolean;
+  interface LzmaModule {
+    LZMA: LzmaDecoder;
+    LZMA_WORKER: LzmaDecoder;
   }
-  const lzma: LzmaApi;
+  const lzma: LzmaModule;
   export default lzma;
 }
 

@@ -51,7 +51,7 @@ function parseZipLocal(bytes: Uint8Array): Map<string, Uint8Array> {
         data = bytes.subarray(dataStart, dataEnd);
       } else if (compression === 8) {
         // ZIP uses raw deflate, not zlib-wrapped
-        data = inflateSync(bytes.subarray(dataStart, dataEnd), new Uint8Array(uncompSize));
+        data = inflateSync(bytes.subarray(dataStart, dataEnd), { out: new Uint8Array(uncompSize) });
       } else {
         data = bytes.subarray(dataStart, dataEnd);
       }

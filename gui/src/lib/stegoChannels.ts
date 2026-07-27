@@ -1,6 +1,7 @@
 import { assessFlagCandidate, detectFlags } from "./flagDetector";
 import { crc32, readAscii, readU16, readU32 } from "./stegoBinary";
 import { analyzeByteRecipes } from "./stegoByteRecipes";
+import { decodeFiveBySevenVisual } from "./stegoDotMatrix";
 import type { StegoChannelCandidate, StegoFinding, StegoVisual } from "./stegoTypes";
 
 export interface StegoChannelResult {
@@ -385,6 +386,11 @@ export function analyzeStegoChannels(bytes: Uint8Array, prefixes: readonly strin
   const recipes = analyzeByteRecipes(bytes, prefixes, caseSensitive);
   candidates.push(...recipes.candidates);
   visuals.push(...recipes.visuals);
+  for (const visual of visuals.filter((item) => item.id.endsWith("-offset-scatter"))) {
+    for (const decoded of decodeFiveBySevenVisual(visual)) {
+      addCandidate(candidates, "坐标点阵", visual.label, decoded.text, decoded.detail, prefixes, caseSensitive);
+    }
+  }
   candidates.sort((left, right) => (left.confidence === "high" ? 0 : 1) - (right.confidence === "high" ? 0 : 1) || left.source.localeCompare(right.source) || left.value.localeCompare(right.value));
   const findings: StegoFinding[] = [];
   for (const candidate of candidates) {

@@ -1,4 +1,5 @@
 import { assessFlagCandidate, detectFlags } from "./flagDetector";
+import { decodeMarkerHighlightText } from "./stegoDotMatrix";
 import type { StegoChannelCandidate, StegoFinding, StegoVisual } from "./stegoTypes";
 
 export interface ByteRecipeOptions {
@@ -21,6 +22,7 @@ function strideFlags(
   maximumCandidates: number,
 ) {
   const candidates: StegoChannelCandidate[] = [];
+  const completeHexCandidates: Array<{ candidate: StegoChannelCandidate; stride: number; offset: number; key: string }> = [];
   for (let stride = 2; stride <= maximumStride && candidates.length < maximumCandidates; stride += 1) {
     for (let residue = 0; residue < stride && candidates.length < maximumCandidates; residue += 1) {
       const selected = new Uint8Array(Math.ceil(Math.max(0, bytes.length - residue) / stride));
@@ -32,7 +34,7 @@ function strideFlags(
         const decodedOffset = decoded.indexOf(hit.text);
         const originalOffset = decodedOffset < 0 ? residue : residue + decodedOffset * stride;
         const assessment = assessFlagCandidate(hit.text);
-        candidates.push({
+        const candidate: StegoChannelCandidate = {
           id: `byte-stride-${stride}-${residue}-${candidates.length}`,
           source: "字节步长配方",
           label: `步长 ${stride}，余数 ${residue}`,
@@ -40,10 +42,25 @@ function strideFlags(
           confidence: assessment.confidence === "high" ? "high" : "candidate",
           detail: `从原始偏移 0x${originalOffset.toString(16)} 开始，每 ${stride} 字节取一个值`,
           flags: [hit.text],
+        };
+        candidates.push(candidate);
+        const complete = hit.text.match(/^([A-Za-z][A-Za-z0-9_-]{1,31})\{([0-9a-fA-F]{32})\}$/);
+        if (complete) completeHexCandidates.push({
+          candidate,
+          stride,
+          offset: originalOffset,
+          key: `${stride}:${caseSensitive ? complete[1] : complete[1].toLowerCase()}:${complete[2].length}`,
         });
         if (candidates.length >= maximumCandidates) break;
       }
     }
+  }
+  const groups = new Map<string, Array<(typeof completeHexCandidates)[number]>>();
+  for (const entry of completeHexCandidates) groups.set(entry.key, [...(groups.get(entry.key) ?? []), entry]);
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const preferred = group.reduce((latest, entry) => entry.offset > latest.offset ? entry : latest);
+    for (const entry of group) entry.candidate.confidence = entry === preferred ? "high" : "candidate";
   }
   return candidates;
 }
@@ -177,6 +194,31 @@ function markerVisuals(bytes: Uint8Array) {
   return visuals;
 }
 
+function markerTextCandidates(
+  bytes: Uint8Array,
+  prefixes: readonly string[],
+  caseSensitive: boolean,
+) {
+  const candidates: StegoChannelCandidate[] = [];
+  for (const marker of markerPairCandidates(bytes)) {
+    for (const decoded of decodeMarkerHighlightText(bytes, marker.marker, marker.first, marker.last)) {
+      for (const hit of detectFlags(decoded.text, prefixes, caseSensitive)) {
+        const assessment = assessFlagCandidate(hit.text);
+        candidates.push({
+          id: `byte-marker-text-${candidates.length}`,
+          source: "字节标记点阵",
+          label: marker.marker.map((byte) => byte.toString(16).padStart(2, "0").toUpperCase()).join(" "),
+          value: hit.text,
+          confidence: assessment.confidence === "high" ? "high" : "candidate",
+          detail: decoded.detail,
+          flags: [hit.text],
+        });
+      }
+    }
+  }
+  return candidates;
+}
+
 export function analyzeByteRecipes(
   source: Uint8Array,
   prefixes: readonly string[],
@@ -187,16 +229,19 @@ export function analyzeByteRecipes(
   const maximumStride = Math.max(2, Math.min(32, Math.floor(options.maximumStride ?? 32)));
   const maximumCandidates = Math.max(1, Math.min(200, Math.floor(options.maximumCandidates ?? 64)));
   const bytes = source.subarray(0, maximumBytes);
-  const candidates = strideFlags(bytes, prefixes, caseSensitive, maximumStride, maximumCandidates);
+  const candidates = [
+    ...markerTextCandidates(bytes, prefixes, caseSensitive),
+    ...strideFlags(bytes, prefixes, caseSensitive, maximumStride, maximumCandidates),
+  ].slice(0, maximumCandidates);
   const visuals = markerVisuals(bytes);
   const findings: StegoFinding[] = [];
   for (const candidate of candidates) {
-    const assessment = assessFlagCandidate(candidate.value);
+    const highConfidence = candidate.confidence === "high";
     findings.push({
       id: `byte-recipe-flag-${findings.length}`,
-      severity: assessment.confidence === "high" ? "high" : "suspicious",
+      severity: highConfidence ? "high" : "suspicious",
       source: candidate.source,
-      title: assessment.confidence === "high" ? "字节配方发现 Flag" : "字节配方疑似 Flag",
+      title: highConfidence ? "字节配方发现 Flag" : "字节配方疑似 Flag",
       detail: candidate.value,
     });
   }

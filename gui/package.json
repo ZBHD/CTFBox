@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "dev:renderer": "pnpm run prepare:ocr && vite",
+    "dev:renderer": "pnpm run prepare:assets && vite",
     "prepare:vendor": "powershell -ExecutionPolicy Bypass -File ../tools/prepare_vendor_tools.ps1",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File ../tools/prepare_python_runtime.ps1",
     "prepare:ocr": "node scripts/prepare-ocr-assets.mjs",
+    "prepare:bpg": "node scripts/prepare-bpg-assets.mjs",
+    "prepare:assets": "pnpm run prepare:ocr && pnpm run prepare:bpg",
     "build": "tauri build",
-    "build:renderer": "pnpm run prepare:ocr && vite build",
+    "build:renderer": "pnpm run prepare:assets && vite build",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run"
   },

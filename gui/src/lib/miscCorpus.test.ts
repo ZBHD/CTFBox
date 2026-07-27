@@ -58,20 +58,39 @@ describe("MiscTest real-corpus regression", () => {
   });
 
   corpusIt.each([
-    ["misc46.gif", "gif-offset-scatter"],
-    ["misc47.png", "apng-offset-scatter"],
-  ])("renders the verified coordinate channel from %s", (name, visualId) => {
-    expect(analyzeStegoChannels(bytes(name), ["ctfshow"], false).visuals).toContainEqual(expect.objectContaining({ id: visualId }));
+    ["misc46.gif", "gif-offset-scatter", "ctfshow{05906b3be8742a13a93898186bc5802f}"],
+    ["misc47.png", "apng-offset-scatter", "ctfshow{6d51f85b45a0061754a2776a32cf26c4}"],
+  ])("decodes the verified coordinate channel from %s", (name, visualId, flag) => {
+    const result = analyzeStegoChannels(bytes(name), ["ctfshow"], false);
+    expect(result.visuals).toContainEqual(expect.objectContaining({ id: visualId }));
+    expect(result.candidates).toContainEqual(expect.objectContaining({
+      source: "坐标点阵",
+      value: flag,
+      flags: [flag],
+      confidence: "high",
+    }));
+  });
+
+  corpusIt("decodes the verified hex-editor marker highlight from misc41", () => {
+    const flag = "ctfshow{fcbd427caf4a52f1147ab44346cd1cdd}";
+    expect(analyzeStegoChannels(bytes("misc41.jpg"), ["ctfshow"], false).candidates).toContainEqual(expect.objectContaining({
+      source: "字节标记点阵",
+      value: flag,
+      flags: [flag],
+      confidence: "high",
+    }));
   });
 
   corpusIt.each([
     ["misc18.jpg", "ctfshow{3228ac17e5f05d60c208f72d4cf5a839}"],
     ["misc19.tif", "ctfshow{dfdcf08038cd446a5eb50782f8d3605d}"],
   ])("assembles the verified metadata answer from %s", (name, flag) => {
-    expect(extractStegoMetadata(bytes(name)).findings).toContainEqual(expect.objectContaining({
+    const findings = extractStegoMetadata(bytes(name)).findings;
+    expect(findings).toContainEqual(expect.objectContaining({
       title: "元数据组合发现 Flag",
       detail: flag,
     }));
+    expect(findings.filter((finding) => finding.title === "元数据组合发现 Flag" && finding.severity === "high").map((finding) => finding.detail)).toEqual([flag]);
   });
 
   corpusIt.each([

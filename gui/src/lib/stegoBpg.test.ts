@@ -1,7 +1,10 @@
 // @ts-expect-error Vitest runs in Node; the renderer tsconfig intentionally omits Node types.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import BPGDecoder from "bpg-decoder/bpgdec.js";
 import { decodeBpgPixels } from "./stegoBpg";
+
+(globalThis as typeof globalThis & { CTFBoxBPGDecoder: typeof BPGDecoder }).CTFBoxBPGDecoder = BPGDecoder;
 
 const samplePath = "D:\\Projects\\MiscTest\\misc3.bpg";
 const corpusIt = existsSync(samplePath) ? it : it.skip;

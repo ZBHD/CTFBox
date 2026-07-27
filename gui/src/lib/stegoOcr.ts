@@ -180,6 +180,39 @@ function flagTextVariants(text: string) {
   return fullNormalized === normalized ? [normalized, repaired] : [normalized, repaired, fullNormalized];
 }
 
+/** Normalize a flag string for dedup comparison (lowercase, no spaces). */
+function normalizeFlagKey(flag: string): string {
+  return flag.toLowerCase().replace(/\s+/g, "");
+}
+
+/** Score a flag candidate by evidence quality. Higher = more trustworthy. */
+export function scoreFlagCandidate(
+  flag: string,
+  source: string,
+  confidencePercent: number,
+  hasDirectBytes: boolean,
+  crossSourceCount: number,
+): number {
+  let score = 0;
+  // 32-char hex payload = complete MD5-style flag
+  if (/\{[0-9a-fA-F]{32}\}/.test(flag)) score += 300;
+  else if (/\{[0-9a-fA-F]{16,31}\}/.test(flag)) score += 150;
+  else if (/\{[A-Za-z0-9_-]{4,}\}/.test(flag)) score += 50;
+  // Direct byte evidence (not OCR)
+  if (hasDirectBytes) score += 200;
+  // OCR confidence bonus
+  score += Math.min(100, confidencePercent);
+  // Metadata/structural source bonus
+  if (/^(元数据|PNG 文本|EXIF|GIF|结构|ASCII)/.test(source)) score += 50;
+  // Cross-source confirmation
+  if (crossSourceCount >= 2) score += 80;
+  // Short payload penalty
+  const payload = flag.match(/\{([^}]*)\}/)?.[1] ?? "";
+  if (payload.length < 8) score -= 100;
+  else if (payload.length >= 32) score += 50;
+  return score;
+}
+
 export async function recognizeStegoCandidates(
   candidates: readonly StegoOcrCandidate[],
   prefixes: readonly string[],
@@ -190,7 +223,10 @@ export async function recognizeStegoCandidates(
   if (signal.aborted) throw abortError();
   const results: StegoOcrResult[] = [];
   const findings: StegoFinding[] = [];
-  const seenFlags = new Set<string>();
+  // Collect all flag finds across candidates, keyed by normalized flag
+  const findingsByKey = new Map<string, {
+    flag: string; source: string; assessment: { confidence: string }; configured: boolean; candidateLabel: string;
+  }[]>();
   for (const candidate of candidates) {
     if (signal.aborted) throw abortError();
     try {
@@ -217,18 +253,12 @@ export async function recognizeStegoCandidates(
         flags,
       });
       for (const flag of flags) {
-        const key = caseSensitive ? flag : flag.toLowerCase();
-        if (seenFlags.has(key)) continue;
-        seenFlags.add(key);
+        const key = keyForFlag(flag);
         const assessment = assessFlagCandidate(flag);
         const configured = configuredKeys.has(keyForFlag(flag));
-        findings.push({
-          id: `ocr-flag-${findings.length}`,
-          severity: configured && assessment.confidence === "high" ? "high" : "suspicious",
-          source: `OCR · ${candidate.label}`,
-          title: configured && assessment.confidence === "high" ? "OCR 发现 Flag" : "OCR 疑似 Flag",
-          detail: flag,
-        });
+        const existing = findingsByKey.get(key) ?? [];
+        existing.push({ flag, source: `OCR · ${candidate.label}`, assessment, configured, candidateLabel: candidate.label });
+        findingsByKey.set(key, existing);
       }
     } catch (error) {
       if (signal.aborted || error instanceof Error && error.name === "AbortError") throw abortError();
@@ -241,6 +271,34 @@ export async function recognizeStegoCandidates(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+  // Score-based dedup across all candidates
+  const seenNormalized = new Set<string>();
+  const deduped = [...findingsByKey.entries()]
+    .map(([key, entries]) => {
+      const best = entries.reduce((a, b) => {
+        // Prefer complete flags (32-char hex) over short/partial
+        const aScore = scoreFlagCandidate(b.flag, b.source, 0, false, entries.length);
+        const bScore = scoreFlagCandidate(a.flag, a.source, 0, false, entries.length);
+        return aScore > bScore ? a : b;
+      });
+      return { key, best, crossSourceCount: new Set(entries.map((e) => e.source.replace(/OCR · /, ""))).size };
+    })
+    .sort((a, b) => {
+      const aScore = scoreFlagCandidate(b.best.flag, b.best.source, 0, false, b.crossSourceCount);
+      const bScore = scoreFlagCandidate(a.best.flag, a.best.source, 0, false, a.crossSourceCount);
+      return aScore - bScore; // higher score first
+    });
+  for (const { key, best, crossSourceCount } of deduped) {
+    if (seenNormalized.has(key)) continue;
+    seenNormalized.add(key);
+    findings.push({
+      id: `ocr-flag-${findings.length}`,
+      severity: best.configured && best.assessment.confidence === "high" ? "high" : "suspicious",
+      source: best.source,
+      title: best.configured && best.assessment.confidence === "high" ? "OCR 发现 Flag" : "OCR 疑似 Flag",
+      detail: best.flag,
+    });
   }
   return { results, findings };
 }

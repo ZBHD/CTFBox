@@ -39,6 +39,7 @@ const MISC_TOOLS = [
   { id: "lsb", name: "LSB 隐写", detail: "像素低位数据提取" },
   { id: "image", name: "图片/文件隐写", detail: "元数据、结构、DCT 与频域" },
   { id: "audio", name: "音频隐写", detail: "频谱与波形数据分析" },
+  { id: "pcap", name: "PCAP 分析", detail: "抓包结构与网络端点摘要" },
 ];
 
 export function ToolRail({

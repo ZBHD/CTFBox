@@ -104,6 +104,7 @@ const MODE_NAMES: Record<string, string> = {
   lsb: "LSB 隐写",
   image: "图片/文件隐写",
   audio: "音频隐写",
+  pcap: "PCAP 分析",
 };
 
 function selectionKey(selection: ToolSelection) {

@@ -1,6 +1,7 @@
 import type { AudioLocalAnalysis } from "./audioTypes";
 import type { StegoLocalAnalysis } from "./stegoTypes";
 import type { ZipLocalAnalysis } from "./zipTypes";
+import type { PcapLocalAnalysis } from "./pcapTypes";
 
 export type LsbChannel = "R" | "G" | "B" | "A" | "I";
 export type LsbBit = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -83,4 +84,4 @@ export interface LsbLocalAnalysis {
   error?: string;
 }
 
-export type LocalAnalysisState = LsbLocalAnalysis | StegoLocalAnalysis | ZipLocalAnalysis | AudioLocalAnalysis;
+export type LocalAnalysisState = LsbLocalAnalysis | StegoLocalAnalysis | ZipLocalAnalysis | AudioLocalAnalysis | PcapLocalAnalysis;

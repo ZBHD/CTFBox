@@ -8,6 +8,7 @@ import { BUILT_IN_FLAG_PREFIXES } from "./lib/flagPrefixPreference";
 import type { LsbLocalAnalysis } from "./lib/lsbTypes";
 import { DEFAULT_STEGO_OPTIONS } from "./lib/stegoAnalyzer";
 import type { StegoLocalAnalysis } from "./lib/stegoTypes";
+import type { PcapLocalAnalysis } from "./lib/pcapTypes";
 
 vi.mock("@tauri-apps/api/core", () => ({
   Channel: class {
@@ -67,6 +68,10 @@ function stegoResult(): StegoLocalAnalysis {
   return { kind: "stego", status: "completed", fileName: "evidence.jpg", options: { ...DEFAULT_STEGO_OPTIONS }, selectedTab: "dct", report: { format: "JPEG", findings: [], sections: [], metadata: [], strings: [], visuals: [], carvedFiles: [] } };
 }
 
+function pcapResult(): PcapLocalAnalysis {
+  return { kind: "pcap", status: "completed", fileName: "traffic.pcap", report: { format: "pcap", linkType: 1, packets: [], findings: [] } };
+}
+
 describe("App LSB task integration", () => {
   it("isolates, restores and clears structured LSB state by selection key", () => {
     const renderer = create(<App updateAdapter={adapter()} />);
@@ -112,5 +117,22 @@ describe("App LSB task integration", () => {
     act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "misc", mode: "image" }));
     workbench = renderer.root.findByType(MiscWorkbench);
     expect(workbench.props.analysis).toMatchObject({ kind: "stego", selectedTab: "dct" });
+  });
+
+  it("isolates PCAP analysis from other Misc task state", () => {
+    const renderer = create(<App updateAdapter={adapter()} />);
+    mounted.push(renderer);
+    const select = (mode: string) => act(() => renderer.root.findByType(ToolRail).props.onSelect({ toolId: "misc", mode }));
+
+    select("pcap");
+    let workbench = renderer.root.findByType(MiscWorkbench);
+    act(() => workbench.props.onAnalysisChange(pcapResult()));
+    expect(renderer.root.findByType(MiscWorkbench).props.analysis).toMatchObject({ kind: "pcap", fileName: "traffic.pcap" });
+
+    select("image");
+    expect(renderer.root.findByType(MiscWorkbench).props.analysis).toBeUndefined();
+    select("pcap");
+    workbench = renderer.root.findByType(MiscWorkbench);
+    expect(workbench.props.analysis).toMatchObject({ kind: "pcap", report: { format: "pcap" } });
   });
 });

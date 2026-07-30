@@ -37,4 +37,10 @@ describe("MiscWorkbench", () => {
     expect(html).toContain("频谱");
     expect(html).toContain("声道");
   });
+
+  it("routes PCAP to the dedicated capture workbench", () => {
+    const html = renderMode("pcap");
+    expect(html).toContain("PCAP 分析");
+    expect(html).toContain("数据包概览");
+  });
 });
